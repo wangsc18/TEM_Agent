@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>C172 TEM 全流程训练</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* 全局深色风格 */
+        body { background-color: #1e1e2f; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
+        .panel { background: #2a2a40; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #444; }
+        
+        /* === Phase 1: 文字交互 === */
+        .tem-label { color: #0dcaf0; font-weight: bold; display: block; margin-top: 10px; }
+        .tem-word { 
+            cursor: pointer; padding: 2px 5px; margin: 0 2px; border-radius: 4px; 
+            border: 1px solid transparent; display: inline-block; transition: 0.2s;
+        }
+        .tem-word:hover { background-color: #3e3e5e; border-color: #666; }
+        .tem-word.tagged { background-color: #dc3545 !important; color: white; font-weight: bold; }
+
+        /* === Phase 2: 仪表与航路 === */
+        .gauge-row { display: flex; justify-content: space-around; padding: 15px 0; background: #222; border-radius: 8px; margin-bottom: 15px; }
+        .gauge { width: 100px; height: 100px; background: #fff; border-radius: 50%; position: relative; border: 4px solid #555; }
+        .gauge-label { position: absolute; top: 65%; width: 100%; text-align: center; font-size: 12px; color: #000; font-weight: bold; }
+        .gauge-needle {
+            width: 3px; height: 45px; background: #d63384; position: absolute;
+            left: 48%; top: 5%; transform-origin: bottom center;
+            transition: transform 0.15s linear; z-index: 10;
+        }
+        .gauge-center { width: 12px; height: 12px; background: #333; border-radius: 50%; position: absolute; top: 44%; left: 44%; z-index: 11;}
+        .oil-green { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 6px solid transparent; border-top-color: #28a745; border-right-color: #28a745; transform: rotate(-45deg); opacity: 0.5; }
+
+        /* 虚拟航路 (Virtual NAV) */
+        .route-box { position: relative; height: 100px; background: #181824; border: 1px solid #444; border-radius: 8px; overflow: hidden; }
+        .route-line { position: absolute; top: 50%; left: 20px; right: 20px; height: 2px; background: #555; }
+        .route-text { position: absolute; top: 60%; color: #888; font-size: 12px; }
+        
+        #plane-icon {
+            position: absolute; top: 30%; left: 20px; font-size: 24px;
+            transform: translateX(-50%); transition: left 0.15s linear;
+        }
+        
+        .event-dot {
+            position: absolute; top: 45%; width: 12px; height: 12px; border-radius: 50%; 
+            transform: translateX(-50%); z-index: 5; border: 2px solid #fff;
+        }
+        .dot-warning { background-color: #ffc107; }
+        .dot-failure { background-color: #dc3545; box-shadow: 0 0 8px #dc3545; }
+
+        /* === Phase 3: 检查单 === */
+        .checklist-item { padding: 10px; border-bottom: 1px solid #555; cursor: pointer; background: #333; }
+        .checklist-item:hover { background: #444; }
+        .checklist-item.done { background-color: #198754; text-decoration: line-through; }
+
+        /* 动画 */
+        .blink { animation: blink-anim 1s infinite; }
+        @keyframes blink-anim { 50% { opacity: 0.5; } }
+        .modal-dark { background-color: #2a2a40; color: white; border: 1px solid #555; }
+    </style>
+</head>
+<body>
+
+<div class="container py-3">
+    <!-- 顶部栏 -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="m-0">✈️ C172 TEM 训练器 <span class="badge bg-secondary" id="phase-badge">Wait</span></h4>
+        <span class="badge bg-warning text-dark">Score: <span id="score">0</span></span>
+    </div>
+
+    <!-- 登录 -->
+    <div id="login-panel" class="row justify-content-center mt-5">
+        <div class="col-md-4">
+            <div class="panel p-4 text-center">
+                <h3 class="mb-3">飞行准备</h3>
+                <input id="username" class="form-control mb-2" placeholder="呼号">
+                <select id="role" class="form-select mb-3">
+                    <option value="PF">PF (操纵)</option>
+                    <option value="PM">PM (监控)</option>
+                </select>
+                <button onclick="join()" class="btn btn-primary w-100">加入训练</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="sim-area" style="display:none;">
+        <div class="row">
+            
+            <!-- 左侧：主显示区 -->
+            <div class="col-md-8">
+                
+                <!-- Phase 1: 起飞前检查 -->
+                <div id="phase1-panel" class="panel">
+                    <h5 class="text-info border-bottom pb-2">Phase 1: Pre-flight (起飞前TEM)</h5>
+                    <p class="small text-muted">请识别并点击下方文本中的潜在威胁（如：天气、故障）：</p>
+                    <div id="preflight-content"></div>
+                    <button id="btn-next-phase" onclick="reqNext()" class="btn btn-success w-100 mt-3">检查完毕，准备起飞 (Cross-check)</button>
+                </div>
+
+                <!-- Phase 2: 飞行监控 -->
+                <div id="phase2-panel" class="panel" style="display:none;">
+                    <h5 class="text-warning border-bottom pb-2">Phase 2: In-flight (空中巡航)</h5>
+                    
+                    <!-- 仪表盘 -->
+                    <div class="gauge-row">
+                        <div class="gauge"><div class="gauge-label">SPD</div><div class="gauge-needle" id="nd-spd"></div></div>
+                        <div class="gauge"><div class="gauge-label">ALT</div><div class="gauge-needle" id="nd-alt"></div></div>
+                        <div class="gauge"><div class="oil-green"></div><div class="gauge-label">OIL</div><div class="gauge-needle" id="nd-oil"></div></div>
+                    </div>
+
+                    <!-- 虚拟航路 -->
+                    <div class="route-box" id="route-track">
+                        <div class="route-line"></div>
+                        <div class="route-text" style="left: 10px;">CYXH</div>
+                        <div class="route-text" style="right: 10px;">CYYC</div>
+                        <div id="plane-icon">✈️</div>
+                    </div>
+                    <p class="text-center small text-muted mt-1">Visualized Flight Progress</p>
+                </div>
+
+            </div>
+
+            <!-- 右侧：辅助区 -->
+            <div class="col-md-4">
+                <!-- 告警 -->
+                <div id="alert-box" class="alert alert-dark text-center mb-3">SYSTEM NORMAL</div>
+                
+                <!-- QRH 库 -->
+                <div class="panel">
+                    <h6>📚 QRH Library (决策)</h6>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-danger btn-sm text-start" onclick="selQRH('engine_fire')">🔥 ENGINE FIRE</button>
+                        <button class="btn btn-outline-warning btn-sm text-start" onclick="selQRH('low_oil_pressure')">🛢️ LOW OIL PRESSURE</button>
+                        <button class="btn btn-outline-info btn-sm text-start" onclick="selQRH('electrical_fire')">⚡ ELECTRICAL FIRE</button>
+                    </div>
+                </div>
+
+                <!-- 当前检查单 -->
+                <div id="chk-panel" class="panel" style="display:none; border-color: #d63384;">
+                    <h6 id="chk-title" class="text-danger fw-bold">TITLE</h6>
+                    <div id="chk-msg" class="small mb-2"></div>
+                    <div id="chk-list"></div>
+                </div>
+                
+                <!-- 日志 -->
+                <div class="panel p-2 bg-dark" style="height: 150px; overflow-y: auto; font-family: monospace; font-size: 12px; color: #0f0;" id="log-box"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 结算弹窗 -->
+<div class="modal fade" id="endModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content modal-dark">
+            <div class="modal-header"><h5 class="modal-title">训练报告</h5></div>
+            <div class="modal-body text-center">
+                <h1 class="text-success display-3" id="end-score">0</h1>
+                <h4 id="end-res">Passed</h4>
+                <p class="text-muted" id="end-sum">...</p>
+            </div>
+            <div class="modal-footer">
+                <button onclick="location.reload()" class="btn btn-primary">End Session</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const socket = io();
+    let room = "SimRoom1";
+
+    // 1. 登录
+    function join() {
+        const u = document.getElementById('username').value;
+        const r = document.getElementById('role').value;
+        socket.emit('join', {username: u, role: r, room: room});
+        document.getElementById('login-panel').style.display = 'none';
+        document.getElementById('sim-area').style.display = 'block';
+    }
+
+    // 2. 渲染 Phase 1 文字 (核心修复)
+    socket.on('start_phase_1', (payload) => {
+        document.getElementById('phase-badge').innerText = "Phase 1";
+        document.getElementById('phase-badge').className = "badge bg-info";
+        const box = document.getElementById('preflight-content');
+        box.innerHTML = "";
+
+        payload.data.forEach(item => {
+            const row = document.createElement('div');
+            row.innerHTML = `<span class="tem-label">${item.label}:</span>`;
+            
+            // 分词渲染
+            item.content.split(' ').forEach(word => {
+                const span = document.createElement('span');
+                span.className = "tem-word";
+                span.innerText = word;
+                span.onclick = () => socket.emit('tag_item', {room: room, keyword: word});
+                row.appendChild(span);
+            });
+            box.appendChild(row);
+        });
+        log("Pre-flight started. Tag threats.");
+    });
+
+    socket.on('mark_success', (data) => {
+        log(`${data.role} tagged: ${data.keyword}`);
+        document.querySelectorAll('.tem-word').forEach(el => {
+            if(el.innerText === data.keyword) el.classList.add('tagged');
+        });
+    });
+
+    // 3. 切换 Phase 2
+    function reqNext() {
+        socket.emit('req_phase_2', {room: room});
+        document.getElementById('btn-next-phase').innerText = "等待对方确认...";
+        document.getElementById('btn-next-phase').disabled = true;
+    }
+
+    socket.on('start_phase_2', (data) => {
+        document.getElementById('phase1-panel').style.display = 'none';
+        document.getElementById('phase2-panel').style.display = 'block';
+        document.getElementById('phase-badge').innerText = "Phase 2: In-flight";
+        document.getElementById('phase-badge').className = "badge bg-warning text-dark";
+        log("Takeoff! Monitoring instruments...");
+    });
+
+    // 4. 飞行数据更新 (修复卡顿)
+    socket.on('flight_update', (data) => {
+        // 仪表
+        document.getElementById('nd-spd').style.transform = `rotate(${(data.spd - 40) * 2.5}deg)`;
+        document.getElementById('nd-alt').style.transform = `rotate(${(data.alt % 1000) * 0.36}deg)`;
+        document.getElementById('nd-oil').style.transform = `rotate(${(data.oil_p - 80) * 2}deg)`;
+        
+        // 航路图标位置 (根据 progress 百分比)
+        // 航路容器宽度约 100%，留左右边距，映射 0-100 到 5% - 95%
+        const pos = 5 + (data.progress * 0.9);
+        document.getElementById('plane-icon').style.left = `${pos}%`;
+    });
+
+    // 事件打点 (红点)
+    socket.on('event_trigger', (data) => {
+        const alertBox = document.getElementById('alert-box');
+        alertBox.className = `alert alert-danger fw-bold blink`;
+        alertBox.innerText = `⚠️ ${data.msg}`;
+        
+        // 在航路线上添加红点
+        const track = document.getElementById('route-track');
+        const dot = document.createElement('div');
+        dot.className = `event-dot dot-${data.type}`;
+        dot.style.left = `${5 + (data.progress * 0.9)}%`;
+        track.appendChild(dot);
+        log(`EVENT: ${data.msg}`);
+    });
+
+    // 5. 检查单与结算
+    function selQRH(key) { socket.emit('select_checklist', {room: room, key: key}); }
+
+    socket.on('show_checklist', (data) => {
+        document.getElementById('chk-panel').style.display = 'block';
+        document.getElementById('chk-title').innerText = data.title;
+        document.getElementById('chk-msg').innerText = data.msg;
+        const list = document.getElementById('chk-list');
+        list.innerHTML = "";
+        data.items.forEach((txt, i) => {
+            list.innerHTML += `<div id="item-${i}" class="checklist-item" onclick="checkItem(${i})">⬜ ${txt}</div>`;
+        });
+    });
+
+    function checkItem(i) { socket.emit('check_item', {room: room, index: i}); }
+
+    socket.on('item_checked', (data) => {
+        const el = document.getElementById(`item-${data.index}`);
+        el.className = "checklist-item done";
+        el.innerText = el.innerText.replace("⬜", "✅");
+        log(`${data.role} checked item ${data.index + 1}`);
+    });
+
+    socket.on('mission_complete', (data) => {
+        const modal = new bootstrap.Modal(document.getElementById('endModal'));
+        document.getElementById('end-score').innerText = data.score;
+        document.getElementById('end-res').innerText = data.result;
+        document.getElementById('end-sum').innerText = data.summary;
+        modal.show();
+    });
+
+    socket.on('update_score', (data) => {
+        document.getElementById('score').innerText = data.score;
+    });
+
+    socket.on('sys_msg', (d) => log(d.msg));
+
+    function log(msg) {
+        const b = document.getElementById('log-box');
+        b.innerHTML += `<div>> ${msg}</div>`;
+        b.scrollTop = b.scrollHeight;
+    }
+</script>
+</body>
+</html>

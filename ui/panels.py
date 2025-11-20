@@ -166,6 +166,28 @@ class RightPanel(tk.Frame):
         )
         self.status_label.pack(pady=5)
 
+        # TTS进度显示区（新增 - 多行显示）
+        tts_progress_frame = tk.Frame(voice_frame, bg="#f5f5f5", relief=tk.GROOVE, bd=1)
+        tts_progress_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        tk.Label(tts_progress_frame, text="🔊 TTS转换进度:", font=("Helvetica", 9, "bold"), bg="#f5f5f5").pack(anchor=tk.W, padx=5, pady=2)
+
+        # 使用Listbox显示多个句子的进度
+        self.tts_progress_listbox = tk.Listbox(
+            tts_progress_frame,
+            font=("Helvetica", 9),
+            bg="#f5f5f5",
+            fg="#666",
+            height=5,  # 显示5行
+            relief=tk.FLAT,
+            highlightthickness=0,
+            selectmode=tk.NONE
+        )
+        self.tts_progress_listbox.pack(fill=tk.BOTH, padx=5, pady=2)
+
+        # 存储句子索引到Listbox行号的映射
+        self.tts_sentence_map = {}  # {sentence_index: listbox_row}
+
         # 文字输入区
         text_input_frame = tk.Frame(voice_frame)
         text_input_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -210,9 +232,8 @@ class RightPanel(tk.Frame):
             # 2. 准备接收AI流式回复
             self._start_ai_streaming()
 
-            # 3. 触发语音引擎处理（LLM + TTS）
-            if self.controller.voice_engine:
-                self.controller.voice_engine.process_user_message(message)
+            # 3. 触发双引擎处理（小模型 + 大模型）
+            self.controller.process_user_message(message)
 
     def _start_ai_streaming(self):
         """开始AI流式回复（初始化状态）"""
@@ -260,3 +281,57 @@ class RightPanel(tk.Frame):
             text=status_text,
             fg=color_map.get(status_type, "gray")
         )
+
+    def update_tts_progress(self, sentence: str, index: int, status: str):
+        """更新TTS转换进度显示（多行）"""
+        if not hasattr(self, 'tts_progress_listbox'):
+            return  # 如果还在阶段一，没有进度组件
+
+        # 状态映射
+        status_map = {
+            "converting": "⏳ 正在转换",
+            "queued": "⏸️ 等待播放",
+            "playing": "🔊 正在播放",
+        }
+
+        status_text = status_map.get(status, "⏸️ 等待")
+
+        # 截断过长的句子（保留前25个字符）
+        display_sentence = sentence if len(sentence) <= 25 else sentence[:25] + "..."
+
+        # 构建显示文本
+        progress_text = f"[#{index}] {status_text}: {display_sentence}"
+
+        # 检查这个句子是否已经在列表中
+        if index in self.tts_sentence_map:
+            # 更新现有行
+            row = self.tts_sentence_map[index]
+            self.tts_progress_listbox.delete(row)
+            self.tts_progress_listbox.insert(row, progress_text)
+        else:
+            # 添加新行
+            self.tts_progress_listbox.insert(tk.END, progress_text)
+            # 记录映射（注意：行号 = 当前列表大小 - 1）
+            self.tts_sentence_map[index] = self.tts_progress_listbox.size() - 1
+
+        # 自动滚动到最新的句子
+        self.tts_progress_listbox.see(tk.END)
+
+        # 限制显示最近20个句子（避免列表过长）
+        if self.tts_progress_listbox.size() > 20:
+            self.tts_progress_listbox.delete(0)
+            # 重建映射
+            self._rebuild_tts_sentence_map()
+
+    def _rebuild_tts_sentence_map(self):
+        """重建句子索引映射（在删除旧行后）"""
+        self.tts_sentence_map = {}
+        for row in range(self.tts_progress_listbox.size()):
+            line = self.tts_progress_listbox.get(row)
+            # 从文本中提取句子索引 "[#1]"
+            if line.startswith("[#"):
+                try:
+                    index = int(line.split("]")[0][2:])
+                    self.tts_sentence_map[index] = row
+                except:
+                    pass

@@ -5,6 +5,7 @@ openai>=1.12.0
 
 # Audio processing
 sounddevice>=0.4.6
+soundfile>=0.12.1
 numpy>=1.24.0
 scipy>=1.10.0
 
@@ -13,6 +14,12 @@ python-dotenv>=1.0.0
 
 # Async support (usually included in Python 3.7+)
 asyncio
+
+# WebSocket support for Realtime API
+websockets>=12.0
+
+# SOCKS proxy support (for network environments requiring proxy)
+python-socks[asyncio]>=2.0.0
 
 # Optional: Edge TTS for ultra-fast speech synthesis (recommended)
 edge-tts>=6.1.0
