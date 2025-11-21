@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>C172 TEM 全流程训练</title>
+    <title>C172 TEM 训练器 V2 - 角色分工版</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -10,19 +10,26 @@
         /* 全局深色风格 */
         body { background-color: #1e1e2f; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
         .panel { background: #2a2a40; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #444; }
-        
+
         /* === Phase 1: 文字交互 === */
         .tem-label { color: #0dcaf0; font-weight: bold; display: block; margin-top: 10px; }
-        .tem-word { 
-            cursor: pointer; padding: 2px 5px; margin: 0 2px; border-radius: 4px; 
+        .tem-word {
+            cursor: pointer; padding: 2px 5px; margin: 0 2px; border-radius: 4px;
             border: 1px solid transparent; display: inline-block; transition: 0.2s;
         }
+        /* 移除威胁词的黄色高亮，让学员自己识别 */
         .tem-word:hover { background-color: #3e3e5e; border-color: #666; }
-        .tem-word.tagged { background-color: #dc3545 !important; color: white; font-weight: bold; }
+        .tem-word.threat-processed { background-color: #28a745; color: white; font-weight: bold; }
 
         /* === Phase 2: 仪表与航路 === */
-        .gauge-row { display: flex; justify-content: space-around; padding: 15px 0; background: #222; border-radius: 8px; margin-bottom: 15px; }
-        .gauge { width: 100px; height: 100px; background: #fff; border-radius: 50%; position: relative; border: 4px solid #555; }
+        .gauge-row { display: flex; justify-content: space-around; flex-wrap: wrap; padding: 15px 0; background: #222; border-radius: 8px; margin-bottom: 15px; }
+        .gauge {
+            width: 100px; height: 100px; background: #fff; border-radius: 50%;
+            position: relative; border: 4px solid #555; margin: 5px;
+            cursor: pointer; transition: border-color 0.3s, transform 0.2s;
+        }
+        .gauge:hover { transform: scale(1.05); }
+        .gauge.monitored { border-color: #0dcaf0; box-shadow: 0 0 15px #0dcaf0; }
         .gauge-label { position: absolute; top: 65%; width: 100%; text-align: center; font-size: 12px; color: #000; font-weight: bold; }
         .gauge-needle {
             width: 3px; height: 45px; background: #d63384; position: absolute;
@@ -32,18 +39,18 @@
         .gauge-center { width: 12px; height: 12px; background: #333; border-radius: 50%; position: absolute; top: 44%; left: 44%; z-index: 11;}
         .oil-green { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 6px solid transparent; border-top-color: #28a745; border-right-color: #28a745; transform: rotate(-45deg); opacity: 0.5; }
 
-        /* 虚拟航路 (Virtual NAV) */
+        /* 虚拟航路 */
         .route-box { position: relative; height: 100px; background: #181824; border: 1px solid #444; border-radius: 8px; overflow: hidden; }
         .route-line { position: absolute; top: 50%; left: 20px; right: 20px; height: 2px; background: #555; }
         .route-text { position: absolute; top: 60%; color: #888; font-size: 12px; }
-        
+
         #plane-icon {
             position: absolute; top: 30%; left: 20px; font-size: 24px;
             transform: translateX(-50%); transition: left 0.15s linear;
         }
-        
+
         .event-dot {
-            position: absolute; top: 45%; width: 12px; height: 12px; border-radius: 50%; 
+            position: absolute; top: 45%; width: 12px; height: 12px; border-radius: 50%;
             transform: translateX(-50%); z-index: 5; border: 2px solid #fff;
         }
         .dot-warning { background-color: #ffc107; }
@@ -54,10 +61,62 @@
         .checklist-item:hover { background: #444; }
         .checklist-item.done { background-color: #198754; text-decoration: line-through; }
 
+        /* === 新增：威胁管理面板 === */
+        .threat-status-item {
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 4px solid #666;
+            background: #333;
+            font-size: 0.85em;
+        }
+        .threat-status-item.success { border-left-color: #28a745; background-color: #1a3d2a; }
+        .threat-status-item.pm_error { border-left-color: #ffc107; background-color: #3d3020; }
+        .threat-status-item.critical_error { border-left-color: #dc3545; background-color: #3d1f1f; }
+        .threat-status-item.pm_catch { border-left-color: #17a2b8; background-color: #1f2f3d; }
+
+        /* SOP 显示面板 */
+        .sop-panel {
+            background: #1a1a2e;
+            border: 2px solid #0dcaf0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .sop-panel h6 { color: #0dcaf0; margin-bottom: 10px; }
+        .sop-panel ul { margin: 0; padding-left: 20px; }
+        .sop-panel li { margin: 5px 0; font-size: 0.9em; }
+
+        /* 测试题样式 */
+        .quiz-container { display: none; }
+        .quiz-question {
+            background: #2a2a40;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 8px;
+            border-left: 4px solid #0dcaf0;
+        }
+        .quiz-option {
+            padding: 10px 15px;
+            margin: 8px 0;
+            background: #333;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .quiz-option:hover { background: #444; }
+        .quiz-option.selected { background: #0dcaf0; color: #000; font-weight: bold; }
+        .quiz-option.correct { background: #28a745; color: white; }
+        .quiz-option.wrong { background: #dc3545; color: white; }
+
         /* 动画 */
         .blink { animation: blink-anim 1s infinite; }
         @keyframes blink-anim { 50% { opacity: 0.5; } }
         .modal-dark { background-color: #2a2a40; color: white; border: 1px solid #555; }
+
+        /* 角色标识 */
+        .role-badge-pf { background-color: #d63384; }
+        .role-badge-pm { background-color: #0dcaf0; color: #000; }
     </style>
 </head>
 <body>
@@ -65,7 +124,7 @@
 <div class="container py-3">
     <!-- 顶部栏 -->
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="m-0">✈️ C172 TEM 训练器 <span class="badge bg-secondary" id="phase-badge">Wait</span></h4>
+        <h4 class="m-0">✈️ C172 TEM 训练器 V2 <span class="badge bg-secondary" id="phase-badge">Wait</span></h4>
         <span class="badge bg-warning text-dark">Score: <span id="score">0</span></span>
     </div>
 
@@ -74,11 +133,26 @@
         <div class="col-md-4">
             <div class="panel p-4 text-center">
                 <h3 class="mb-3">飞行准备</h3>
-                <input id="username" class="form-control mb-2" placeholder="呼号">
-                <select id="role" class="form-select mb-3">
-                    <option value="PF">PF (操纵)</option>
-                    <option value="PM">PM (监控)</option>
-                </select>
+
+                <div class="mb-3 text-start">
+                    <label class="form-label text-muted small">训练房间号 (Room ID)</label>
+                    <input id="room-id" class="form-control bg-dark text-white border-secondary" placeholder="例如: 8888">
+                    <small class="text-muted" style="font-size: 0.7em">和你的搭档输入相同的房间号</small>
+                </div>
+
+                <div class="mb-3 text-start">
+                    <label class="form-label text-muted small">呼号 (Callsign)</label>
+                    <input id="username" class="form-control bg-dark text-white border-secondary" placeholder="例如: Pilot A">
+                </div>
+
+                <div class="mb-3 text-start">
+                    <label class="form-label text-muted small">职责 (Role)</label>
+                    <select id="role" class="form-select bg-dark text-white border-secondary">
+                        <option value="PF">PF (操纵飞行员)</option>
+                        <option value="PM">PM (监控飞行员)</option>
+                    </select>
+                </div>
+
                 <button onclick="join()" class="btn btn-primary w-100">加入训练</button>
             </div>
         </div>
@@ -87,27 +161,85 @@
     <!-- 主界面 -->
     <div id="sim-area" style="display:none;">
         <div class="row">
-            
+
             <!-- 左侧：主显示区 -->
             <div class="col-md-8">
-                
+
                 <!-- Phase 1: 起飞前检查 -->
                 <div id="phase1-panel" class="panel">
-                    <h5 class="text-info border-bottom pb-2">Phase 1: Pre-flight (起飞前TEM)</h5>
-                    <p class="small text-muted">请识别并点击下方文本中的潜在威胁（如：天气、故障）：</p>
+                    <h5 class="text-info border-bottom pb-2">
+                        Phase 1: Pre-flight TEM (起飞前威胁管理)
+                        <span id="my-role-badge" class="badge float-end"></span>
+                    </h5>
+                    <p class="small text-muted">
+                        <strong>PF</strong>: 点击文本中的威胁关键词（黄色高亮），选择应对方案<br>
+                        <strong>PM</strong>: 查看 PF 方案，验证 SOP 限制，同意/驳回决策
+                    </p>
                     <div id="preflight-content"></div>
-                    <button id="btn-next-phase" onclick="reqNext()" class="btn btn-success w-100 mt-3">检查完毕，准备起飞 (Cross-check)</button>
+
+                    <!-- 威胁处理状态 -->
+                    <div id="threat-status-panel" class="mt-3" style="display:none;">
+                        <h6 class="text-success">✅ 已处理威胁</h6>
+                        <div id="threat-status-list"></div>
+                    </div>
+
+                    <!-- 紧急预案测试 -->
+                    <div id="quiz-container" class="quiz-container mt-4">
+                        <h5 class="text-warning border-bottom pb-2">📚 紧急预案知识测试 (PM 操作)</h5>
+                        <div id="quiz-questions"></div>
+                    </div>
+
+                    <button id="btn-start-quiz" onclick="startQuiz()" class="btn btn-warning w-100 mt-3" style="display:none;">
+                        开始紧急预案测试
+                    </button>
+                    <button id="btn-next-phase" onclick="reqNext()" class="btn btn-success w-100 mt-3" style="display:none;">
+                        检查完毕，准备起飞 (Cross-check)
+                    </button>
                 </div>
 
                 <!-- Phase 2: 飞行监控 -->
                 <div id="phase2-panel" class="panel" style="display:none;">
                     <h5 class="text-warning border-bottom pb-2">Phase 2: In-flight (空中巡航)</h5>
-                    
+                    <p class="small text-info">💡 点击仪表标记监控异常征兆，提前发现故障可获得额外分数！</p>
+
                     <!-- 仪表盘 -->
                     <div class="gauge-row">
-                        <div class="gauge"><div class="gauge-label">SPD</div><div class="gauge-needle" id="nd-spd"></div></div>
-                        <div class="gauge"><div class="gauge-label">ALT</div><div class="gauge-needle" id="nd-alt"></div></div>
-                        <div class="gauge"><div class="oil-green"></div><div class="gauge-label">OIL</div><div class="gauge-needle" id="nd-oil"></div></div>
+                        <div class="gauge" data-gauge-id="spd" onclick="monitorGauge('spd')">
+                            <div class="gauge-label">SPD</div>
+                            <div class="gauge-needle" id="nd-spd"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge" data-gauge-id="alt" onclick="monitorGauge('alt')">
+                            <div class="gauge-label">ALT</div>
+                            <div class="gauge-needle" id="nd-alt"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge" data-gauge-id="oil_p" onclick="monitorGauge('oil_p')">
+                            <div class="oil-green"></div>
+                            <div class="gauge-label">OIL P</div>
+                            <div class="gauge-needle" id="nd-oil"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge" data-gauge-id="rpm" onclick="monitorGauge('rpm')">
+                            <div class="gauge-label">RPM</div>
+                            <div class="gauge-needle" id="nd-rpm"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge" data-gauge-id="fuel_qty" onclick="monitorGauge('fuel_qty')">
+                            <div class="gauge-label">FUEL</div>
+                            <div class="gauge-needle" id="nd-fuel"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge" data-gauge-id="vacuum" onclick="monitorGauge('vacuum')">
+                            <div class="gauge-label">VAC</div>
+                            <div class="gauge-needle" id="nd-vacuum"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge" data-gauge-id="ammeter" onclick="monitorGauge('ammeter')">
+                            <div class="gauge-label">AMPS</div>
+                            <div class="gauge-needle" id="nd-ammeter"></div>
+                            <div class="gauge-center"></div>
+                        </div>
                     </div>
 
                     <!-- 虚拟航路 -->
@@ -126,14 +258,37 @@
             <div class="col-md-4">
                 <!-- 告警 -->
                 <div id="alert-box" class="alert alert-dark text-center mb-3">SYSTEM NORMAL</div>
-                
-                <!-- QRH 库 -->
+
+                <!-- PM 验证面板 (仅 PM 可见) -->
+                <div id="pm-verify-panel" class="panel border-info" style="display:none;">
+                    <h6 class="text-info">🔍 PM 验证决策</h6>
+                    <div class="small mb-2">
+                        <strong>PF 方案：</strong><br>
+                        <span id="pm-pf-decision" class="text-warning"></span>
+                    </div>
+
+                    <div class="sop-panel" id="pm-sop-display">
+                        <h6 id="pm-sop-title">SOP 参考</h6>
+                        <ul id="pm-sop-content"></ul>
+                    </div>
+
+                    <div class="d-grid gap-2 mt-3">
+                        <button class="btn btn-success" onclick="pmVerify(true)">✅ 同意方案</button>
+                        <button class="btn btn-danger" onclick="pmVerify(false)">❌ 驳回方案</button>
+                    </div>
+                </div>
+
+                <!-- QRH 库 (Phase 3) -->
                 <div class="panel">
                     <h6>📚 QRH Library (决策)</h6>
                     <div class="d-grid gap-2">
                         <button class="btn btn-outline-danger btn-sm text-start" onclick="selQRH('engine_fire')">🔥 ENGINE FIRE</button>
                         <button class="btn btn-outline-warning btn-sm text-start" onclick="selQRH('low_oil_pressure')">🛢️ LOW OIL PRESSURE</button>
                         <button class="btn btn-outline-info btn-sm text-start" onclick="selQRH('electrical_fire')">⚡ ELECTRICAL FIRE</button>
+                        <button class="btn btn-outline-primary btn-sm text-start" onclick="selQRH('carburetor_icing')">❄️ CARBURETOR ICING</button>
+                        <button class="btn btn-outline-success btn-sm text-start" onclick="selQRH('fuel_imbalance')">⚖️ FUEL IMBALANCE</button>
+                        <button class="btn btn-outline-secondary btn-sm text-start" onclick="selQRH('vacuum_failure')">🌀 VACUUM FAILURE</button>
+                        <button class="btn btn-outline-light btn-sm text-start" onclick="selQRH('alternator_failure')">🔋 ALTERNATOR FAILURE</button>
                     </div>
                 </div>
 
@@ -143,9 +298,35 @@
                     <div id="chk-msg" class="small mb-2"></div>
                     <div id="chk-list"></div>
                 </div>
-                
+
                 <!-- 日志 -->
-                <div class="panel p-2 bg-dark" style="height: 150px; overflow-y: auto; font-family: monospace; font-size: 12px; color: #0f0;" id="log-box"></div>
+                <div class="panel p-2 bg-dark" style="height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; color: #0f0;" id="log-box"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PF 决策模态框 -->
+<div class="modal fade" id="pfDecisionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content modal-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <span class="badge bg-danger">PF</span> 威胁决策
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <strong>威胁：</strong> <span id="pf-threat-keyword"></span><br>
+                    <span id="pf-threat-desc"></span>
+                </div>
+                <h6 class="text-info">选择应对方案：</h6>
+                <div id="pf-options-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="pf-submit-btn" onclick="submitPFDecision()">提交方案</button>
             </div>
         </div>
     </div>
@@ -171,18 +352,43 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     const socket = io();
-    let room = "SimRoom1";
+    let room = "";
+    let myRole = "";
+    let pfDecisionModal;
+    let currentThreatKeyword = "";
+    let selectedOptionId = "";
+
+    // 威胁关键词列表 (从后端 PHASE1_THREATS 同步)
+    const THREAT_KEYWORDS = ["24015G25KT", "Landing_Light_U/S", "Recovering_from_Cold"];
 
     // 1. 登录
     function join() {
         const u = document.getElementById('username').value;
         const r = document.getElementById('role').value;
+        const inputRoom = document.getElementById('room-id').value;
+
+        if(!u) return alert("请输入您的呼号");
+        if(!inputRoom) return alert("请输入房间号 (例如: 101)");
+
+        room = inputRoom;
+        myRole = r;
+
         socket.emit('join', {username: u, role: r, room: room});
         document.getElementById('login-panel').style.display = 'none';
         document.getElementById('sim-area').style.display = 'block';
+
+        document.querySelector('h4').innerHTML += ` <span class="badge bg-dark border border-secondary">Room: ${room}</span>`;
+
+        // 显示角色标识
+        const roleBadge = document.getElementById('my-role-badge');
+        roleBadge.innerText = myRole;
+        roleBadge.className = myRole === 'PF' ? 'badge role-badge-pf' : 'badge role-badge-pm';
+
+        // 初始化模态框
+        pfDecisionModal = new bootstrap.Modal(document.getElementById('pfDecisionModal'));
     }
 
-    // 2. 渲染 Phase 1 文字 (核心修复)
+    // 2. 渲染 Phase 1 文字
     socket.on('start_phase_1', (payload) => {
         document.getElementById('phase-badge').innerText = "Phase 1";
         document.getElementById('phase-badge').className = "badge bg-info";
@@ -192,28 +398,227 @@
         payload.data.forEach(item => {
             const row = document.createElement('div');
             row.innerHTML = `<span class="tem-label">${item.label}:</span>`;
-            
-            // 分词渲染
+
+            // 分词渲染，威胁关键词不高亮（让学员自己识别）
             item.content.split(' ').forEach(word => {
                 const span = document.createElement('span');
                 span.className = "tem-word";
                 span.innerText = word;
-                span.onclick = () => socket.emit('tag_item', {room: room, keyword: word});
+
+                // 如果是威胁关键词，添加点击事件但不高亮
+                if (THREAT_KEYWORDS.includes(word)) {
+                    // 只有 PF 可以点击
+                    if (myRole === 'PF') {
+                        span.onclick = () => identifyThreat(word);
+                        span.title = "点击识别威胁"; // 添加提示
+                    }
+                } else {
+                    // 非威胁词不可点击
+                    span.style.cursor = 'default';
+                }
+
                 row.appendChild(span);
             });
             box.appendChild(row);
         });
-        log("Pre-flight started. Tag threats.");
+        log("Pre-flight started. PF: Identify threats. PM: Monitor & Verify.");
     });
 
-    socket.on('mark_success', (data) => {
-        log(`${data.role} tagged: ${data.keyword}`);
-        document.querySelectorAll('.tem-word').forEach(el => {
-            if(el.innerText === data.keyword) el.classList.add('tagged');
+    // 3. PF 识别威胁
+    function identifyThreat(keyword) {
+        if (myRole !== 'PF') {
+            alert("只有 PF 可以识别威胁");
+            return;
+        }
+        socket.emit('pf_identify_threat', {room: room, keyword: keyword});
+    }
+
+    // 4. 显示 PF 决策模态框
+    socket.on('show_pf_decision_modal', (data) => {
+        currentThreatKeyword = data.keyword;
+        document.getElementById('pf-threat-keyword').innerText = data.keyword;
+        document.getElementById('pf-threat-desc').innerText = data.description;
+
+        const optionsList = document.getElementById('pf-options-list');
+        optionsList.innerHTML = "";
+
+        data.options.forEach(opt => {
+            const optDiv = document.createElement('div');
+            optDiv.className = 'quiz-option';
+            optDiv.innerHTML = `
+                <input type="radio" name="pf-option" value="${opt.id}" id="opt-${opt.id}">
+                <label for="opt-${opt.id}" style="cursor: pointer; margin-left: 8px;">${opt.text}</label>
+            `;
+            optDiv.onclick = () => {
+                document.getElementById(`opt-${opt.id}`).checked = true;
+                selectedOptionId = opt.id;
+                // 高亮选中项
+                document.querySelectorAll('#pf-options-list .quiz-option').forEach(el => el.classList.remove('selected'));
+                optDiv.classList.add('selected');
+            };
+            optionsList.appendChild(optDiv);
         });
+
+        pfDecisionModal.show();
     });
 
-    // 3. 切换 Phase 2
+    // 5. PF 提交决策
+    function submitPFDecision() {
+        if (!selectedOptionId) {
+            alert("请选择一个应对方案");
+            return;
+        }
+        socket.emit('pf_submit_decision', {
+            room: room,
+            keyword: currentThreatKeyword,
+            option_id: selectedOptionId
+        });
+        pfDecisionModal.hide();
+        selectedOptionId = "";
+    }
+
+    // 6. PF 等待 PM 验证
+    socket.on('waiting_pm_verify', (data) => {
+        log(`⏳ ${data.msg}`);
+    });
+
+    // 7. PM 显示验证面板
+    socket.on('show_pm_verify_panel', (data) => {
+        if (myRole !== 'PM') return;
+
+        const panel = document.getElementById('pm-verify-panel');
+        document.getElementById('pm-pf-decision').innerText = data.pf_decision;
+        document.getElementById('pm-sop-title').innerText = data.sop_data.title;
+
+        const sopContent = document.getElementById('pm-sop-content');
+        sopContent.innerHTML = "";
+        data.sop_data.content.forEach(line => {
+            const li = document.createElement('li');
+            li.innerText = line;
+            sopContent.appendChild(li);
+        });
+
+        panel.style.display = 'block';
+        log(`🔍 PM: 验证 PF 的方案 "${data.pf_decision}"`);
+    });
+
+    // 8. PM 验证决策
+    function pmVerify(approved) {
+        socket.emit('pm_verify_decision', {room: room, approved: approved});
+        document.getElementById('pm-verify-panel').style.display = 'none';
+    }
+
+    // 9. 显示威胁决策结果
+    socket.on('threat_decision_result', (data) => {
+        log(`${data.msg} (${data.score_change >= 0 ? '+' : ''}${data.score_change})`);
+
+        // 标记威胁关键词为已处理
+        document.querySelectorAll('.tem-word').forEach(el => {
+            if (el.innerText === data.keyword) {
+                el.classList.remove('threat-keyword');
+                el.classList.add('threat-processed');
+                el.onclick = null;
+            }
+        });
+
+        // 添加到状态列表
+        const statusPanel = document.getElementById('threat-status-panel');
+        const statusList = document.getElementById('threat-status-list');
+
+        const statusItem = document.createElement('div');
+        statusItem.className = `threat-status-item ${data.result}`;
+        statusItem.innerHTML = `<strong>${data.keyword}:</strong> ${data.msg}`;
+        statusList.appendChild(statusItem);
+
+        statusPanel.style.display = 'block';
+
+        // 检查是否所有威胁都已处理
+        const processedCount = document.querySelectorAll('.tem-word.threat-processed').length;
+        if (processedCount === THREAT_KEYWORDS.length) {
+            document.getElementById('btn-start-quiz').style.display = 'block';
+            log("✅ 所有威胁已处理，可以开始紧急预案测试");
+        }
+    });
+
+    // 10. 开始测试
+    function startQuiz() {
+        socket.emit('start_emergency_quiz', {room: room});
+        document.getElementById('btn-start-quiz').style.display = 'none';
+    }
+
+    socket.on('show_emergency_quiz', (data) => {
+        const container = document.getElementById('quiz-container');
+        const questionsDiv = document.getElementById('quiz-questions');
+        questionsDiv.innerHTML = "";
+
+        data.questions.forEach((q, idx) => {
+            const qDiv = document.createElement('div');
+            qDiv.className = 'quiz-question';
+            qDiv.id = `quiz-${q.id}`;
+            qDiv.innerHTML = `
+                <p><strong>问题 ${idx + 1}:</strong> ${q.question}</p>
+                <div id="options-${q.id}"></div>
+                <div id="result-${q.id}" class="mt-2" style="display:none;"></div>
+            `;
+
+            const optionsDiv = qDiv.querySelector(`#options-${q.id}`);
+            q.options.forEach(opt => {
+                const optDiv = document.createElement('div');
+                optDiv.className = 'quiz-option';
+                optDiv.id = `quiz-${q.id}-${opt.id}`;
+                optDiv.innerHTML = `${opt.id.toUpperCase()}. ${opt.text}`;
+
+                if (myRole === 'PM') {
+                    optDiv.onclick = () => submitQuizAnswer(q.id, opt.id);
+                } else {
+                    optDiv.style.cursor = 'not-allowed';
+                    optDiv.style.opacity = '0.6';
+                }
+
+                optionsDiv.appendChild(optDiv);
+            });
+
+            questionsDiv.appendChild(qDiv);
+        });
+
+        container.style.display = 'block';
+        log("📚 紧急预案测试开始 (PM 操作)");
+    });
+
+    function submitQuizAnswer(questionId, answer) {
+        if (myRole !== 'PM') return;
+        socket.emit('submit_quiz_answer', {room: room, question_id: questionId, answer: answer});
+    }
+
+    socket.on('quiz_answer_result', (data) => {
+        const resultDiv = document.getElementById(`result-${data.question_id}`);
+        const optionsDiv = document.getElementById(`options-${data.question_id}`);
+
+        // 禁用所有选项
+        optionsDiv.querySelectorAll('.quiz-option').forEach(el => {
+            el.onclick = null;
+            el.style.cursor = 'default';
+        });
+
+        // 显示结果
+        resultDiv.style.display = 'block';
+        resultDiv.className = data.correct ? 'alert alert-success' : 'alert alert-danger';
+        resultDiv.innerHTML = `
+            <strong>${data.correct ? '✅ 正确' : '❌ 错误'}</strong> (${data.score_change >= 0 ? '+' : ''}${data.score_change})<br>
+            <small>${data.explanation}</small>
+        `;
+
+        // 检查是否所有题都答完
+        const totalQuestions = document.querySelectorAll('.quiz-question').length;
+        const answeredQuestions = document.querySelectorAll('[id^="result-"]').length;
+
+        if (answeredQuestions >= totalQuestions) {
+            document.getElementById('btn-next-phase').style.display = 'block';
+            log("✅ 测试完成，可以进入 Phase 2");
+        }
+    });
+
+    // 11. 切换 Phase 2
     function reqNext() {
         socket.emit('req_phase_2', {room: room});
         document.getElementById('btn-next-phase').innerText = "等待对方确认...";
@@ -228,26 +633,78 @@
         log("Takeoff! Monitoring instruments...");
     });
 
-    // 4. 飞行数据更新 (修复卡顿)
+    // 12. 飞行数据更新
     socket.on('flight_update', (data) => {
-        // 仪表
-        document.getElementById('nd-spd').style.transform = `rotate(${(data.spd - 40) * 2.5}deg)`;
-        document.getElementById('nd-alt').style.transform = `rotate(${(data.alt % 1000) * 0.36}deg)`;
-        document.getElementById('nd-oil').style.transform = `rotate(${(data.oil_p - 80) * 2}deg)`;
-        
-        // 航路图标位置 (根据 progress 百分比)
-        // 航路容器宽度约 100%，留左右边距，映射 0-100 到 5% - 95%
+        // 更新各仪表指针（根据量程映射到 -135° 到 +135° 旋转角度）
+        // SPD: 40-200 KIAS
+        document.getElementById('nd-spd').style.transform = `rotate(${(data.spd - 40) * (270 / 160) - 135}deg)`;
+
+        // ALT: 0-10000 FT (只显示千位内的变化)
+        document.getElementById('nd-alt').style.transform = `rotate(${(data.alt % 1000) * (270 / 1000) - 135}deg)`;
+
+        // OIL P: 0-120 PSI
+        document.getElementById('nd-oil').style.transform = `rotate(${(data.oil_p) * (270 / 120) - 135}deg)`;
+
+        // RPM: 0-3000 RPM
+        if (data.rpm !== undefined) {
+            document.getElementById('nd-rpm').style.transform = `rotate(${(data.rpm) * (270 / 3000) - 135}deg)`;
+        }
+
+        // FUEL: 0-50 GAL (显示左油箱或平均值)
+        if (data.fuel_qty_left !== undefined) {
+            const fuelAvg = (data.fuel_qty_left + data.fuel_qty_right) / 2;
+            document.getElementById('nd-fuel').style.transform = `rotate(${fuelAvg * (270 / 50) - 135}deg)`;
+        }
+
+        // VAC: 0-7 IN HG
+        if (data.vacuum !== undefined) {
+            document.getElementById('nd-vacuum').style.transform = `rotate(${data.vacuum * (270 / 7) - 135}deg)`;
+        }
+
+        // AMMETER: -30 to +30 AMPS
+        if (data.ammeter !== undefined) {
+            document.getElementById('nd-ammeter').style.transform = `rotate(${(data.ammeter + 30) * (270 / 60) - 135}deg)`;
+        }
+
+        // 更新进度
         const pos = 5 + (data.progress * 0.9);
         document.getElementById('plane-icon').style.left = `${pos}%`;
     });
 
-    // 事件打点 (红点)
+    // 13. 仪表监控标记
+    function monitorGauge(gaugeId) {
+        socket.emit('monitor_gauge', {room: room, gauge_id: gaugeId});
+    }
+
+    // 14. 接收仪表监控确认
+    socket.on('gauge_monitored', (data) => {
+        const gaugeEl = document.querySelector(`[data-gauge-id="${data.gauge_id}"]`);
+        if (gaugeEl) {
+            gaugeEl.classList.add('monitored');
+        }
+        log(`👁️ ${data.msg}`);
+    });
+
+    // 15. 接收征兆检测成功
+    socket.on('precursor_detected', (data) => {
+        const alertBox = document.getElementById('alert-box');
+        alertBox.className = 'alert alert-success fw-bold';
+        alertBox.innerText = data.msg;
+
+        log(`${data.msg} (+${data.score})`);
+
+        // 3秒后恢复正常
+        setTimeout(() => {
+            alertBox.className = 'alert alert-dark text-center';
+            alertBox.innerText = 'MONITORING...';
+        }, 3000);
+    });
+
     socket.on('event_trigger', (data) => {
         const alertBox = document.getElementById('alert-box');
         alertBox.className = `alert alert-danger fw-bold blink`;
         alertBox.innerText = `⚠️ ${data.msg}`;
-        
-        // 在航路线上添加红点
+
         const track = document.getElementById('route-track');
         const dot = document.createElement('div');
         dot.className = `event-dot dot-${data.type}`;
@@ -256,7 +713,7 @@
         log(`EVENT: ${data.msg}`);
     });
 
-    // 5. 检查单与结算
+    // 13. 检查单与结算 (Phase 3)
     function selQRH(key) { socket.emit('select_checklist', {room: room, key: key}); }
 
     socket.on('show_checklist', (data) => {
@@ -287,11 +744,46 @@
         modal.show();
     });
 
+    // 检查单完成（不是任务完成）
+    socket.on('checklist_complete', (data) => {
+        log(data.msg);
+        // 隐藏检查单面板，用户可以继续选择其他 QRH
+        document.getElementById('chk-panel').style.display = 'none';
+
+        // 清除右上角的告警显示
+        const alertBox = document.getElementById('alert-box');
+        alertBox.className = 'alert alert-dark text-center';
+        alertBox.innerText = 'SYSTEM NORMAL';
+    });
+
     socket.on('update_score', (data) => {
         document.getElementById('score').innerText = data.score;
     });
 
     socket.on('sys_msg', (d) => log(d.msg));
+
+    socket.on('error_msg', (data) => {
+        alert(data.msg);
+    });
+
+    // 房间已满处理
+    socket.on('room_full', (data) => {
+        alert(`❌ ${data.msg}`);
+        location.reload();
+    });
+
+    // 用户人数更新
+    socket.on('user_count_update', (data) => {
+        log(`👥 房间人数: ${data.count}/2 - ${data.usernames.join(', ')}`);
+    });
+
+    // 用户离开处理
+    socket.on('user_left', (data) => {
+        log(`⚠️ ${data.username} (${data.role}) 离开了训练 - 剩余人数: ${data.remaining_count}/2`);
+        if (data.remaining_count < 2) {
+            alert(`⚠️ 搭档 ${data.username} 已离开，训练暂停。请等待其他人加入或刷新页面重新开始。`);
+        }
+    });
 
     function log(msg) {
         const b = document.getElementById('log-box');

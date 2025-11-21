@@ -1,0 +1,4 @@
+{"event": "session_created", "timestamp": "2025-11-21T09:57:10.184286", "room": "102", "log_file": "session_102_20251121_095710.jsonl"}
+{"timestamp": "2025-11-21T09:57:10.184781", "elapsed_time": 0.001, "room": "102", "username": "老王", "role": "PM", "action": "user_joined", "details": {"session_id": "GKEClJwqC8aZWAFjAAAD", "current_user_count": 1}, "phase": "waiting", "score": 0}
+{"timestamp": "2025-11-21T09:58:00.019330", "elapsed_time": 49.836, "room": "102", "username": "老王", "role": "PM", "action": "user_left", "details": {"session_id": "GKEClJwqC8aZWAFjAAAD"}, "phase": "waiting", "score": 0}
+{"timestamp": "2025-11-21T09:58:00.021850", "elapsed_time": 49.838, "room": "102", "username": "SYSTEM", "role": "SYSTEM", "action": "room_empty", "details": {"reason": "all_users_left"}, "phase": "end", "score": 0}
