@@ -1,0 +1,432 @@
+#!/usr/bin/env python3
+"""
+双过程AI Agent - 基于双过程理论的飞行员AI
+
+架构：观察(Observation) → 策略(Strategy) → 动作(Action) → 执行(Execute)
+
+核心组件：
+- StateObserver: 观察层（提取状态，不用LLM）
+- StrategyGenerator: 策略层（Slow Engine，深度推理）
+- ActionExecutor: 执行层（Fast Engine，快速响应）
+"""
+import asyncio
+from typing import Dict, Any, Optional, List
+
+# 导入核心模块
+from .ai_core import (
+    Observation, Strategy, Action,
+    StateObserver, StrategyGenerator, ActionExecutor,
+    random_delay, extract_option_id, extract_quiz_answer, extract_threat_keyword,
+    extract_qrh_key, detect_abnormal_gauges
+)
+from .text_llm_engine import TextLLMEngine
+
+
+class DualProcessAIAgent:
+    """双过程AI Agent - 结合快速响应和深度推理"""
+
+    def __init__(
+        self,
+        room: str,
+        role: str,
+        fast_engine: TextLLMEngine,
+        slow_engine: TextLLMEngine,
+        socketio,
+        game_logic,
+        config: Optional[Dict] = None
+    ):
+        """
+        初始化双过程AI Agent
+
+        Args:
+            room: 房间ID
+            role: AI角色 ("PF" or "PM")
+            fast_engine: 快速响应引擎 (gpt-4o-mini)
+            slow_engine: 策略推理引擎 (gpt-4o)
+            socketio: SocketIO实例
+            game_logic: GameLogic业务逻辑层实例
+            config: 配置参数
+        """
+        self.room = room
+        self.role = role
+        self.fast_engine = fast_engine
+        self.slow_engine = slow_engine
+        self.socketio = socketio
+        self.game_logic = game_logic
+        self.config = config or {}
+
+        # 虚拟session_id
+        self.fake_sid = f"AI_{room}_{role}"
+
+        # 核心组件初始化
+        self.observer = StateObserver(role=role)
+        self.strategy_gen = StrategyGenerator(
+            slow_engine=slow_engine,
+            role=role,
+            config=config
+        )
+        self.executor = ActionExecutor(
+            fast_engine=fast_engine,
+            role=role,
+            config=config
+        )
+
+        # 状态管理
+        self.current_phase = "waiting"
+        self.conversation_history = []
+        self.pending_actions = []
+        self.strategic_context = {}  # 策略上下文（Slow Engine维护）
+
+        # 配置参数
+        self.fast_response_delay = config.get('fast_response_delay', (1, 3))
+        self.slow_thinking_time = config.get('slow_thinking_time', (3, 6))
+
+        print(f"[DualProcessAI] 初始化 AI {role} for room {room}")
+        print(f"[DualProcessAI] Fast Engine: {fast_engine.model}")
+        print(f"[DualProcessAI] Slow Engine: {slow_engine.model}")
+
+    # ==========================================
+    # Phase 1: 起飞前威胁管理（新架构）
+    # ==========================================
+
+    async def on_phase1_start(self, phase1_data: List[Dict]):
+        """Phase 1 开始"""
+        self.current_phase = "phase1"
+        print(f"[DualProcessAI] Phase 1 开始，角色: {self.role}")
+
+        if self.role == "PF":
+            await self._phase1_pf_identify_threats(phase1_data)
+        else:
+            print(f"[DualProcessAI] PM 准备验证 PF 的决策")
+
+    async def _phase1_pf_identify_threats(self, phase1_data: List[Dict]):
+        """
+        PF识别威胁 - 循环识别所有威胁
+
+        策略：逐个识别威胁，每识别一个就决策一个，直到所有威胁处理完毕
+        """
+        print(f"[DualProcessAI] PF 开始识别所有威胁...")
+
+        all_text = " ".join([item['content'] for item in phase1_data])
+
+        # 已知威胁列表（从数据中获取）
+        from data.phase1_data import PHASE1_THREATS
+        all_threats = list(PHASE1_THREATS.keys())
+
+        print(f"[DualProcessAI] 待识别威胁: {all_threats}")
+
+        # 循环识别每个威胁
+        for threat_keyword in all_threats:
+            # 检查是否已处理
+            room_state = self.game_logic.rooms.get(self.room, {})
+            if threat_keyword in room_state.get('phase1_threats', {}):
+                print(f"[DualProcessAI] 威胁 {threat_keyword} 已处理，跳过")
+                continue
+
+            print(f"[DualProcessAI] 准备识别威胁: {threat_keyword}")
+
+            # 模拟识别延迟
+            await asyncio.sleep(random_delay(*self.fast_response_delay))
+
+            # 调用业务逻辑层识别威胁
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            success = self.game_logic.pf_identify_threat(self.room, threat_keyword, actor)
+
+            if success:
+                print(f"[DualProcessAI] 威胁 {threat_keyword} 识别成功")
+
+                # 获取威胁数据并触发决策流程
+                threat_data = PHASE1_THREATS.get(threat_keyword)
+                if threat_data:
+                    print(f"[DualProcessAI] 触发PF决策流程: {threat_keyword}")
+                    await self.on_pf_decision_request(threat_keyword, threat_data)
+                    print(f"[DualProcessAI] 威胁 {threat_keyword} 决策完成")
+
+                    # 等待一段时间再处理下一个威胁（模拟真实思考间隔）
+                    await asyncio.sleep(random_delay(1, 2))
+            else:
+                print(f"[DualProcessAI] 威胁 {threat_keyword} 识别失败")
+
+        print(f"[DualProcessAI] PF 完成所有威胁识别")
+
+    async def on_pf_decision_request(self, keyword: str, threat_data: Dict):
+        """
+        PF决策请求 - 双过程协作（旧架构，待迁移）
+
+        Args:
+            keyword: 威胁关键词
+            threat_data: 威胁详细数据
+
+        TODO: 迁移到新架构（观察→策略→动作→执行）
+        """
+        if self.role != "PF":
+            return
+
+        print(f"[DualProcessAI] PF 收到决策请求: {keyword}")
+
+        # === System 1: Fast Engine 快速决策 ===
+        fast_task = asyncio.create_task(self._fast_make_decision(threat_data))
+
+        # === System 2: Slow Engine 验证和优化决策 ===
+        slow_task = asyncio.create_task(self._slow_verify_decision(keyword, threat_data))
+
+        # 先等待Fast Engine的初步决策
+        initial_decision = await fast_task
+
+        # 等待Slow Engine验证（但设置超时）
+        try:
+            # 超时时间设置为10秒，足够Slow Engine完成深度推理
+            strategic_decision = await asyncio.wait_for(slow_task, timeout=10.0)
+
+            # 如果Slow Engine有不同意见，采用它的决策
+            if strategic_decision and strategic_decision != initial_decision:
+                print(f"[DualProcessAI] Slow Engine修正决策: {initial_decision} → {strategic_decision}")
+                final_decision = strategic_decision
+            else:
+                final_decision = initial_decision
+        except asyncio.TimeoutError:
+            print(f"[DualProcessAI] Slow Engine超时，使用Fast决策")
+            final_decision = initial_decision
+
+        print(f"[DualProcessAI] 最终决策: {final_decision}")
+
+        # 提交最终决策
+        if final_decision:
+            print(f"[DualProcessAI] 准备提交决策: keyword={keyword}, option_id={final_decision}")
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.pf_submit_decision(self.room, keyword, final_decision, actor)
+            print(f"[DualProcessAI] 决策已提交")
+        else:
+            print(f"[DualProcessAI] 错误: final_decision 为空，无法提交")
+
+    async def _fast_make_decision(self, threat_data: Dict) -> Optional[str]:
+        """Fast Engine: 快速决策（旧架构）"""
+        print(f"[FastEngine] 快速分析应对方案...")
+
+        options_text = "\n".join([
+            f"{opt['id']}: {opt['text']}"
+            for opt in threat_data['options']
+        ])
+
+        prompt = f"""威胁: {threat_data['description']}
+
+方案:
+{options_text}
+
+立即选择最合适的方案，只返回选项ID（option_a/option_b/option_c）。"""
+
+        await asyncio.sleep(random_delay(1, 2))
+
+        try:
+            response = await self.fast_engine.chat(prompt, stream=False)
+            option_id = extract_option_id(response, threat_data['options'])
+            print(f"[FastEngine] 快速决策: {option_id}")
+            return option_id
+        except Exception as e:
+            print(f"[FastEngine] 错误: {e}")
+            return None
+
+    async def _slow_verify_decision(self, keyword: str, threat_data: Dict) -> Optional[str]:
+        """
+        Slow Engine: 验证和优化决策（旧架构）
+
+        Args:
+            keyword: 威胁关键词
+            threat_data: 威胁详细数据
+        """
+        print(f"[SlowEngine] 深度验证决策...")
+
+        options_text = "\n".join([
+            f"{opt['id']}: {opt['text']}"
+            for opt in threat_data['options']
+        ])
+
+        # 获取之前的威胁分析上下文
+        threat_analysis = self.strategic_context.get('phase1_threats', {})
+
+        prompt = f"""你是经验丰富的{self.role}，需要仔细评估应对方案。
+
+威胁: {keyword} - {threat_data['description']}
+
+之前的威胁分析:
+{threat_analysis}
+
+可选方案:
+{options_text}
+
+请从以下角度深入分析：
+1. 方案的安全性和合规性
+2. 与SOP的符合度
+3. 执行的可行性
+4. 潜在的后续影响
+
+返回JSON:
+{{
+    "recommended_option": "option_id",
+    "reasoning": "详细理由",
+    "risks": "潜在风险"
+}}
+"""
+
+        await asyncio.sleep(random_delay(2, 4))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+            from .ai_core.utils import parse_json_response
+            analysis = parse_json_response(response)
+            recommended = analysis.get('recommended_option')
+
+            # 保存推理上下文
+            self.strategic_context['last_decision'] = analysis
+
+            print(f"[SlowEngine] 推荐方案: {recommended} - {analysis.get('reasoning', '')[:50]}")
+            return recommended
+        except Exception as e:
+            print(f"[SlowEngine] 错误: {e}")
+            return None
+
+    async def on_pm_verify_request(self, pf_decision_data: Dict):
+        """
+        PM验证PF决策 - 使用新架构
+
+        流程：观察 → 策略 → 动作 → 执行
+        """
+        if self.role != "PM":
+            return
+
+        print(f"[DualProcessAI] PM 收到验证请求: {pf_decision_data['pf_decision']}")
+        print(f"[新架构] 开始 观察→策略→动作→执行 流程")
+
+        # 步骤1: 观察（简化版，TODO: 传入完整room_state）
+        observation = Observation(
+            phase="phase1",
+            role=self.role,
+            context={
+                "action": "pm_verify",
+                "pf_decision": pf_decision_data
+            }
+        )
+        print(f"[观察层] Phase: {observation.phase}, Role: {observation.role}")
+
+        # 步骤2: Slow Engine 生成策略
+        strategy = await self.strategy_gen.strategize_pm_verify(observation, pf_decision_data)
+        print(f"[策略层] 建议: {strategy.recommendation}")
+
+        # 步骤3: Fast Engine 生成动作
+        action = self.executor.execute_pm_verify(strategy)
+        print(f"[执行层] 动作: {action.to_dict()}")
+
+        # 步骤4: 执行动作
+        from game_logic import Actor
+        actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+        if action.action_type == 'pm_verify_decision':
+            self.game_logic.pm_verify_decision(
+                self.room,
+                action.params['approve'],
+                actor
+            )
+            print(f"[执行完成] PM验证: {'同意' if action.params['approve'] else '驳回'}")
+
+    async def on_quiz_questions(self, questions: List[Dict]):
+        """PM答题 - 顺序处理所有题目"""
+        if self.role != "PM":
+            return
+
+        print(f"[DualProcessAI] PM 收到 {len(questions)} 道测试题，开始顺序答题...")
+
+        for question_data in questions:
+            await self._answer_quiz_question(question_data)
+
+    async def _answer_quiz_question(self, question_data: Dict):
+        """回答单个测试题"""
+        print(f"[DualProcessAI] PM 收到测试题: {question_data['question'][:30]}...")
+
+        options_text = "\n".join([
+            f"{opt['id']}: {opt['text']}"
+            for opt in question_data['options']
+        ])
+
+        prompt = f"""问题: {question_data['question']}
+
+选项:
+{options_text}
+
+根据C172应急程序知识，选择正确答案。只返回选项ID（a/b/c/d）。"""
+
+        await asyncio.sleep(random_delay(2, 4))
+
+        try:
+            response = await self.fast_engine.chat(prompt, stream=False)
+            answer = extract_quiz_answer(response, question_data['options'])
+
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.submit_quiz_answer(self.room, question_data['id'], answer, actor)
+        except Exception as e:
+            print(f"[FastEngine] 答题错误: {e}")
+
+    # ==========================================
+    # Phase 2: 空中监控（旧实现）
+    # ==========================================
+
+    async def on_phase2_gauge_update(self, gauge_states: Dict):
+        """Phase 2: 监控仪表 - 快速检测异常"""
+        abnormal = detect_abnormal_gauges(gauge_states)
+
+        if abnormal:
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+            for gauge_id in abnormal:
+                await asyncio.sleep(0.3)
+                self.game_logic.monitor_gauge(self.room, gauge_id, actor)
+
+    # ==========================================
+    # Phase 3: QRH选择（旧实现）
+    # ==========================================
+
+    async def on_event_alert(self, event_data: Dict):
+        """事件警报 - 快速匹配QRH"""
+        print(f"[DualProcessAI] 收到事件警报: {event_data['msg']}")
+
+        # 简单规则匹配
+        msg = event_data['msg'].upper()
+
+        qrh_keywords = {
+            'OIL PRESSURE': 'low_oil_pressure',
+            'CARBURETOR ICING': 'carburetor_icing',
+            'FUEL IMBALANCE': 'fuel_imbalance',
+            'VACUUM': 'vacuum_failure',
+            'ALTERNATOR': 'alternator_failure',
+            'ENGINE FIRE': 'engine_fire',
+            'ELECTRICAL FIRE': 'electrical_fire'
+        }
+
+        qrh_key = None
+        for keyword, key in qrh_keywords.items():
+            if keyword in msg:
+                qrh_key = key
+                break
+
+        if qrh_key:
+            await asyncio.sleep(1)
+
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.select_qrh(self.room, qrh_key, actor)
+
+    async def on_checklist_shown(self, checklist_data: Dict):
+        """执行检查单 - Fast Engine快速执行"""
+        items_count = len(checklist_data['items'])
+
+        print(f"[DualProcessAI] 执行检查单: {checklist_data['title']} ({items_count}项)")
+
+        from game_logic import Actor
+        actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+        for i in range(items_count):
+            await asyncio.sleep(random_delay(1.5, 3))
+            self.game_logic.check_item(self.room, i, actor)

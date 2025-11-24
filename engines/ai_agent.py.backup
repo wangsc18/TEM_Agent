@@ -1,0 +1,935 @@
+#!/usr/bin/env python3
+"""
+双过程AI Agent - 基于双过程理论的飞行员AI
+观察模块（Observation）: 直接提取当前状态（不用LLM）
+System 2 (Slow Engine): gpt-4o - 深度策略推理（输入观察，输出策略+思考）
+System 1 (Fast Engine): gpt-4o-mini - 快速执行（输入策略，输出具体动作）
+"""
+import asyncio
+import time
+from typing import Dict, Any, Optional, List
+from engines.text_llm_engine import TextLLMEngine
+
+
+# ==========================================
+# 标准化数据结构定义
+# ==========================================
+
+class Observation:
+    """观察结果 - 提取当前状态（不用LLM）"""
+    def __init__(self, phase: str, role: str, context: Dict[str, Any]):
+        self.phase = phase          # 当前阶段：phase1, phase2, phase3
+        self.role = role            # AI角色：PF or PM
+        self.context = context      # 上下文信息（根据阶段不同而不同）
+
+    def to_dict(self) -> Dict:
+        return {
+            "phase": self.phase,
+            "role": self.role,
+            "context": self.context
+        }
+
+
+class Strategy:
+    """策略输出 - Slow Engine的思考结果"""
+    def __init__(self, thinking: str, assessment: Dict, recommendation: Dict, next_focus: str = ""):
+        self.thinking = thinking                # 思考过程
+        self.assessment = assessment            # 情况评估
+        self.recommendation = recommendation    # 策略建议
+        self.next_focus = next_focus           # 下一步关注点
+
+    def to_dict(self) -> Dict:
+        return {
+            "thinking": self.thinking,
+            "assessment": self.assessment,
+            "recommendation": self.recommendation,
+            "next_focus": self.next_focus
+        }
+
+
+class Action:
+    """动作输出 - Fast Engine的执行指令"""
+    def __init__(self, action_type: str, params: Dict[str, Any], execute_immediately: bool = True):
+        self.action_type = action_type          # 动作类型
+        self.params = params                    # 动作参数
+        self.execute_immediately = execute_immediately
+
+    def to_dict(self) -> Dict:
+        return {
+            "action": self.action_type,
+            "params": self.params,
+            "execute_immediately": self.execute_immediately
+        }
+
+
+class DualProcessAIAgent:
+    """双过程AI Agent - 结合快速响应和深度推理"""
+
+    def __init__(
+        self,
+        room: str,
+        role: str,
+        fast_engine: TextLLMEngine,
+        slow_engine: TextLLMEngine,
+        socketio,
+        game_logic,
+        config: Optional[Dict] = None
+    ):
+        """
+        初始化双过程AI Agent
+
+        Args:
+            room: 房间ID
+            role: AI角色 ("PF" or "PM")
+            fast_engine: 快速响应引擎 (gpt-4o-mini)
+            slow_engine: 策略推理引擎 (gpt-4o)
+            socketio: SocketIO实例
+            game_logic: GameLogic业务逻辑层实例
+            config: 配置参数
+        """
+        self.room = room
+        self.role = role
+        self.fast_engine = fast_engine
+        self.slow_engine = slow_engine
+        self.socketio = socketio
+        self.game_logic = game_logic
+        self.config = config or {}
+
+        # 虚拟session_id
+        self.fake_sid = f"AI_{room}_{role}"
+
+        # 状态管理
+        self.current_phase = "waiting"
+        self.conversation_history = []  # 对话历史
+        self.strategic_context = {}     # 策略上下文（由Slow Engine维护）
+        self.pending_actions = []       # 待执行动作队列
+        self.is_slow_engine_busy = False  # Slow Engine是否正在推理
+
+        # 配置参数
+        self.fast_response_delay = config.get('fast_response_delay', (1, 3))  # 快速响应延迟范围 (秒)
+        self.slow_thinking_time = config.get('slow_thinking_time', (3, 6))     # 深度推理时间范围 (秒)
+
+        print(f"[DualProcessAI] 初始化 AI {role} for room {room}")
+        print(f"[DualProcessAI] Fast Engine: {fast_engine.model}")
+        print(f"[DualProcessAI] Slow Engine: {slow_engine.model}")
+
+    # ==========================================
+    # 观察模块（不用LLM，直接提取状态）
+    # ==========================================
+
+    def observe(self, room_state: Dict) -> Observation:
+        """
+        观察当前状态，提取关键信息
+
+        Args:
+            room_state: 房间状态字典
+
+        Returns:
+            Observation: 观察结果
+        """
+        phase = room_state.get('current_phase', 'waiting')
+
+        # 根据不同阶段提取不同的上下文
+        if phase == 'phase1':
+            context = self._observe_phase1(room_state)
+        elif phase == 'phase2':
+            context = self._observe_phase2(room_state)
+        elif phase == 'phase3':
+            context = self._observe_phase3(room_state)
+        else:
+            context = {"status": "waiting"}
+
+        return Observation(phase=phase, role=self.role, context=context)
+
+    def _observe_phase1(self, room_state: Dict) -> Dict:
+        """Phase 1 观察：威胁识别与决策"""
+        return {
+            "phase1_data_available": room_state.get('phase1_data_loaded', False),
+            "identified_threats": list(room_state.get('phase1_threats', {}).keys()),
+            "pending_decision": room_state.get('pending_decision'),
+            "quiz_started": len(room_state.get('phase1_quiz_results', [])) > 0,
+            "all_threats_handled": len(room_state.get('phase1_threats', {})) >= 3,  # 假设有3个威胁
+        }
+
+    def _observe_phase2(self, room_state: Dict) -> Dict:
+        """Phase 2 观察：飞行监控"""
+        return {
+            "sim_active": room_state.get('sim_active', False),
+            "gauge_states": room_state.get('gauge_states', {}),
+            "monitored_gauges": list(room_state.get('monitored_gauges', set())),
+            "event_detections": room_state.get('event_detections', {}),
+            "current_event_index": room_state.get('current_event_index', -1),
+        }
+
+    def _observe_phase3(self, room_state: Dict) -> Dict:
+        """Phase 3 观察：QRH检查单"""
+        return {
+            "used_qrh": list(room_state.get('used_qrh', set())),
+            "current_qrh": room_state.get('current_qrh'),
+            "checked_items": list(room_state.get('checked_items', set())),
+            "active_checklist_len": room_state.get('active_checklist_len', 0),
+        }
+
+    # ==========================================
+    # Phase 1: 起飞前威胁管理
+    # ==========================================
+
+    async def on_phase1_start(self, phase1_data: List[Dict]):
+        """Phase 1 开始"""
+        self.current_phase = "phase1"
+        print(f"[DualProcessAI] Phase 1 开始，角色: {self.role}")
+
+        if self.role == "PF":
+            # PF: 识别威胁
+            await self._phase1_pf_identify_threats(phase1_data)
+        else:
+            # PM: 准备验证（等待PF决策）
+            print(f"[DualProcessAI] PM 准备验证 PF 的决策")
+
+    async def _phase1_pf_identify_threats(self, phase1_data: List[Dict]):
+        """PF识别威胁 - 双过程协作"""
+        # === System 1: Fast Engine 快速识别 ===
+        fast_task = asyncio.create_task(self._fast_identify_threat(phase1_data))
+
+        # === System 2: Slow Engine 深度分析 ===
+        slow_task = asyncio.create_task(self._slow_analyze_threats(phase1_data))
+
+        # 等待Fast Engine完成（优先响应）
+        threat_keyword = await fast_task
+
+        if threat_keyword:
+            # 调用统一业务逻辑层
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.pf_identify_threat(self.room, threat_keyword, actor)
+
+        # Slow Engine在后台继续分析（可能会修正后续策略）
+        # 不阻塞，让它异步完成
+        asyncio.create_task(self._await_slow_analysis(slow_task, 'phase1_threats'))
+
+    async def _fast_identify_threat(self, phase1_data: List[Dict]) -> Optional[str]:
+        """Fast Engine: 快速识别威胁"""
+        print(f"[FastEngine] 快速扫描威胁关键词...")
+
+        # 提取所有文本内容
+        all_text = " ".join([item['content'] for item in phase1_data])
+
+        # 简化的prompt - 只要求返回关键词
+        prompt = f"""你是飞行员{self.role}，快速扫描以下信息，找出一个最紧急的威胁关键词：
+
+{all_text}
+
+常见威胁关键词：24015G25KT（阵风）、Landing_Light_U/S（设备故障）、Recovering_from_Cold（身体状态）
+
+只返回一个关键词，不要解释。"""
+
+        # 短延迟模拟思考
+        await asyncio.sleep(self._random_delay(*self.fast_response_delay))
+
+        try:
+            response = await self.fast_engine.chat(prompt, stream=False)
+            # 提取关键词
+            keyword = self._extract_threat_keyword(response, all_text)
+            print(f"[FastEngine] 识别到威胁: {keyword}")
+            return keyword
+        except Exception as e:
+            print(f"[FastEngine] 错误: {e}")
+            return None
+
+    async def _slow_analyze_threats(self, phase1_data: List[Dict]) -> Dict:
+        """Slow Engine: 深度威胁分析"""
+        print(f"[SlowEngine] 开始深度威胁分析...")
+        self.is_slow_engine_busy = True
+
+        all_text = " ".join([item['content'] for item in phase1_data])
+
+        # 复杂的分析prompt
+        prompt = f"""你是经验丰富的{self.role}，请深入分析以下起飞前信息，评估所有威胁及其优先级：
+
+{all_text}
+
+请从以下角度分析：
+1. 天气威胁（阵风、能见度、温度等）
+2. 飞机适航性（MEL项目、故障）
+3. 机组状态（疲劳、健康、资质）
+4. 运行限制（性能、重量、跑道）
+
+返回JSON格式：
+{{
+    "primary_threat": "最主要威胁关键词",
+    "threat_priority": ["威胁1", "威胁2", "威胁3"],
+    "risk_level": "high/medium/low",
+    "recommended_strategy": "整体应对策略建议"
+}}
+"""
+
+        await asyncio.sleep(self._random_delay(*self.slow_thinking_time))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+            analysis = self._parse_json_response(response)
+            print(f"[SlowEngine] 分析完成: {analysis.get('primary_threat', 'N/A')}")
+
+            # 保存到策略上下文
+            self.strategic_context['phase1_threats'] = analysis
+            return analysis
+        except Exception as e:
+            print(f"[SlowEngine] 错误: {e}")
+            return {}
+        finally:
+            self.is_slow_engine_busy = False
+
+    async def on_pf_decision_request(self, threat_data: Dict):
+        """PF需要做决策 - 双过程协作"""
+        if self.role != "PF":
+            return
+
+        print(f"[DualProcessAI] PF 收到决策请求: {threat_data['keyword']}")
+
+        # === System 1: Fast Engine 快速决策 ===
+        fast_task = asyncio.create_task(self._fast_make_decision(threat_data))
+
+        # === System 2: Slow Engine 验证和优化决策 ===
+        slow_task = asyncio.create_task(self._slow_verify_decision(threat_data))
+
+        # 先等待Fast Engine的初步决策
+        initial_decision = await fast_task
+
+        # 等待Slow Engine验证（但设置超时）
+        try:
+            strategic_decision = await asyncio.wait_for(slow_task, timeout=4.0)
+
+            # 如果Slow Engine有不同意见，采用它的决策
+            if strategic_decision and strategic_decision != initial_decision:
+                print(f"[DualProcessAI] Slow Engine修正决策: {initial_decision} → {strategic_decision}")
+                final_decision = strategic_decision
+            else:
+                final_decision = initial_decision
+        except asyncio.TimeoutError:
+            print(f"[DualProcessAI] Slow Engine超时，使用Fast决策")
+            final_decision = initial_decision
+
+        # 提交最终决策
+        if final_decision:
+            # 调用统一业务逻辑层
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.pf_submit_decision(self.room, threat_data['keyword'], final_decision, actor)
+
+    async def _fast_make_decision(self, threat_data: Dict) -> Optional[str]:
+        """Fast Engine: 快速决策"""
+        print(f"[FastEngine] 快速分析应对方案...")
+
+        options_text = "\n".join([
+            f"{opt['id']}: {opt['text']}"
+            for opt in threat_data['options']
+        ])
+
+        prompt = f"""威胁: {threat_data['description']}
+
+方案:
+{options_text}
+
+立即选择最合适的方案，只返回选项ID（option_a/option_b/option_c）。"""
+
+        await asyncio.sleep(self._random_delay(1, 2))
+
+        try:
+            response = await self.fast_engine.chat(prompt, stream=False)
+            option_id = self._extract_option_id(response, threat_data['options'])
+            print(f"[FastEngine] 快速决策: {option_id}")
+            return option_id
+        except Exception as e:
+            print(f"[FastEngine] 错误: {e}")
+            return None
+
+    async def _slow_verify_decision(self, threat_data: Dict) -> Optional[str]:
+        """Slow Engine: 验证和优化决策"""
+        print(f"[SlowEngine] 深度验证决策...")
+
+        options_text = "\n".join([
+            f"{opt['id']}: {opt['text']}"
+            for opt in threat_data['options']
+        ])
+
+        # 获取之前的威胁分析上下文
+        threat_analysis = self.strategic_context.get('phase1_threats', {})
+
+        prompt = f"""你是经验丰富的{self.role}，需要仔细评估应对方案。
+
+威胁: {threat_data['keyword']} - {threat_data['description']}
+
+之前的威胁分析:
+{threat_analysis}
+
+可选方案:
+{options_text}
+
+请从以下角度深入分析：
+1. 方案的安全性和合规性
+2. 与SOP的符合度
+3. 执行的可行性
+4. 潜在的后续影响
+
+返回JSON:
+{{
+    "recommended_option": "option_id",
+    "reasoning": "详细理由",
+    "risks": "潜在风险"
+}}
+"""
+
+        await asyncio.sleep(self._random_delay(2, 4))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+            analysis = self._parse_json_response(response)
+            recommended = analysis.get('recommended_option')
+
+            # 保存推理上下文
+            self.strategic_context['last_decision'] = analysis
+
+            print(f"[SlowEngine] 推荐方案: {recommended} - {analysis.get('reasoning', '')[:50]}")
+            return recommended
+        except Exception as e:
+            print(f"[SlowEngine] 错误: {e}")
+            return None
+
+    async def on_pm_verify_request(self, pf_decision_data: Dict):
+        """
+        PM验证PF决策 - 使用新架构（观察→策略→动作→执行）
+
+        流程：
+        1. 观察当前状态
+        2. Slow Engine 生成策略（思考+建议）
+        3. Fast Engine 将策略转化为动作
+        4. 执行动作
+        """
+        if self.role != "PM":
+            return
+
+        print(f"[DualProcessAI] PM 收到验证请求: {pf_decision_data['pf_decision']}")
+        print(f"[新架构] 开始 观察→策略→动作→执行 流程")
+
+        # === 步骤1: 观察（不用LLM，直接提取状态）===
+        # 注意：这里我们需要从 app_web.py 传入 room_state，暂时先用简化版本
+        observation = Observation(
+            phase="phase1",
+            role=self.role,
+            context={
+                "action": "pm_verify",
+                "pf_decision": pf_decision_data
+            }
+        )
+        print(f"[观察层] Phase: {observation.phase}, Role: {observation.role}")
+
+        # === 步骤2: Slow Engine 生成策略 ===
+        strategy = await self.slow_strategize_pm_verify(observation, pf_decision_data)
+        print(f"[策略层] 建议: {strategy.recommendation}")
+
+        # === 步骤3: Fast Engine 生成动作 ===
+        action = await self.fast_execute_pm_verify(strategy)
+        print(f"[执行层] 动作: {action.to_dict()}")
+
+        # === 步骤4: 执行动作 ===
+        from game_logic import Actor
+        actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+        if action.action_type == 'pm_verify_decision':
+            self.game_logic.pm_verify_decision(
+                self.room,
+                action.params['approve'],
+                actor
+            )
+            print(f"[执行完成] PM验证: {'同意' if action.params['approve'] else '驳回'}")
+
+    async def _fast_verify_pf_decision(self, data: Dict) -> bool:
+        """Fast Engine: 快速验证"""
+        print(f"[FastEngine] 快速验证PF方案...")
+
+        sop_text = "\n".join(data['sop_data']['content'])
+
+        prompt = f"""你是PM（监控飞行员），正在验证PF的应对方案。
+
+PF的方案: {data['pf_decision']}
+
+SOP参考:
+{sop_text}
+
+【重要】你的任务是验证"PF选择的应对方案"是否合理，而不是评估"是否应该继续飞行"。
+
+判断标准：
+✅ 同意的情况：
+- PF选择了"使用XX标准程序"或"执行XX检查单" → 同意（说明PF在积极应对）
+- PF选择了"咨询XX"或"按照SOP执行" → 同意（说明PF在寻求正确流程）
+
+❌ 驳回的情况：
+- PF选择了"忽略此威胁"或"不采取行动" → 驳回（不应对威胁）
+- PF选择了"继续飞行，不做处理" → 驳回（忽视威胁）
+
+只回答"同意"或"驳回"。"""
+
+        await asyncio.sleep(self._random_delay(1, 3))
+
+        try:
+            response = await self.fast_engine.chat(prompt, stream=False)
+            approved = self._parse_approval(response)
+            print(f"[FastEngine] 快速验证: {'同意' if approved else '驳回'}")
+            return approved
+        except Exception as e:
+            print(f"[FastEngine] 错误: {e}")
+            return True  # 默认同意
+
+    async def _slow_verify_pf_decision(self, data: Dict) -> Optional[bool]:
+        """Slow Engine: 深度验证"""
+        print(f"[SlowEngine] 深度验证PF方案...")
+
+        sop_text = "\n".join(data['sop_data']['content'])
+
+        prompt = f"""你是严谨的PM，需要深入验证PF的决策。
+
+PF方案: {data['pf_decision']}
+
+SOP标准:
+标题: {data['sop_data']['title']}
+{sop_text}
+
+重要背景：
+- PF已经识别出威胁并选择了应对方案
+- "使用XX标准程序/检查单"意味着PF正在积极应对，是正确的做法
+- PM的职责是验证PF的方案是否是威胁的合理应对，而不是重新评估威胁本身
+- 只有当PF选择"忽略风险"或"不执行程序"时才应该驳回
+
+请评估：
+1. PF是否选择了合适的应对方案
+2. 该方案是否能有效处置当前威胁
+
+返回JSON:
+{{
+    "approve": true/false,
+    "reasoning": "详细理由"
+}}
+"""
+
+        await asyncio.sleep(self._random_delay(3, 5))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+            analysis = self._parse_json_response(response)
+            approved = analysis.get('approve', True)
+
+            # 保存验证上下文
+            self.strategic_context['last_verification'] = analysis
+
+            print(f"[SlowEngine] 验证结果: {'同意' if approved else '驳回'} - {analysis.get('reasoning', '')[:50]}")
+            return approved
+        except Exception as e:
+            print(f"[SlowEngine] 错误: {e}")
+            return None
+
+    async def on_quiz_questions(self, questions: List[Dict]):
+        """
+        PM答题 - 顺序处理所有题目（避免event loop冲突）
+
+        Args:
+            questions: 所有测试题列表
+        """
+        if self.role != "PM":
+            return
+
+        print(f"[DualProcessAI] PM 收到 {len(questions)} 道测试题，开始顺序答题...")
+
+        # 顺序处理每道题，避免多个event loop同时创建
+        for question_data in questions:
+            await self.on_quiz_question(question_data)
+
+    async def on_quiz_question(self, question_data: Dict):
+        """PM答题 - 只用Fast Engine快速回答"""
+        if self.role != "PM":
+            return
+
+        print(f"[DualProcessAI] PM 收到测试题: {question_data['question'][:30]}...")
+
+        options_text = "\n".join([
+            f"{opt['id']}: {opt['text']}"
+            for opt in question_data['options']
+        ])
+
+        prompt = f"""问题: {question_data['question']}
+
+选项:
+{options_text}
+
+根据C172应急程序知识，选择正确答案。只返回选项ID（a/b/c/d）。"""
+
+        await asyncio.sleep(self._random_delay(2, 4))
+
+        try:
+            response = await self.fast_engine.chat(prompt, stream=False)
+            answer = self._extract_quiz_answer(response, question_data['options'])
+
+            # 调用统一业务逻辑层
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.submit_quiz_answer(self.room, question_data['id'], answer, actor)
+        except Exception as e:
+            print(f"[FastEngine] 答题错误: {e}")
+
+    # ==========================================
+    # Phase 2: 空中监控
+    # ==========================================
+
+    async def on_phase2_gauge_update(self, gauge_states: Dict):
+        """Phase 2: 监控仪表 - 快速反应"""
+        # 使用Fast Engine快速检测异常
+        abnormal = self._detect_abnormal_gauges(gauge_states)
+
+        if abnormal:
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+            for gauge_id in abnormal:
+                await asyncio.sleep(0.3)
+                # 调用统一业务逻辑层
+                self.game_logic.monitor_gauge(self.room, gauge_id, actor)
+
+    def _detect_abnormal_gauges(self, gauge_states: Dict) -> List[str]:
+        """快速规则检测异常仪表"""
+        abnormal = []
+
+        # 简单阈值判断（Fast Engine不需要LLM）
+        if gauge_states.get('oil_p', 80) < 60:
+            abnormal.append('oil_p')
+        if gauge_states.get('rpm', 2400) < 2300:
+            abnormal.append('rpm')
+        if gauge_states.get('vacuum', 5.0) < 4.0:
+            abnormal.append('vacuum')
+        if gauge_states.get('ammeter', 0) < -5:
+            abnormal.append('ammeter')
+
+        # 燃油不平衡检测
+        left = gauge_states.get('fuel_qty_left', 25)
+        right = gauge_states.get('fuel_qty_right', 25)
+        if abs(left - right) > 10:
+            abnormal.append('fuel_qty')
+
+        return abnormal
+
+    # ==========================================
+    # Phase 3: QRH选择
+    # ==========================================
+
+    async def on_event_alert(self, event_data: Dict):
+        """事件警报 - 双过程选择QRH"""
+        print(f"[DualProcessAI] 收到事件警报: {event_data['msg']}")
+
+        # === System 1: Fast Engine 快速匹配QRH ===
+        fast_task = asyncio.create_task(self._fast_select_qrh(event_data))
+
+        # === System 2: Slow Engine 验证QRH选择 ===
+        slow_task = asyncio.create_task(self._slow_select_qrh(event_data))
+
+        # 先获取Fast选择
+        fast_qrh = await fast_task
+
+        # 等待Slow验证
+        try:
+            slow_qrh = await asyncio.wait_for(slow_task, timeout=3.0)
+            final_qrh = slow_qrh if slow_qrh else fast_qrh
+        except asyncio.TimeoutError:
+            final_qrh = fast_qrh
+
+        if final_qrh:
+            await asyncio.sleep(1)  # 稍微延迟，避免过快响应
+
+            # 调用统一业务逻辑层
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.select_qrh(self.room, final_qrh, actor)
+
+    async def _fast_select_qrh(self, event_data: Dict) -> Optional[str]:
+        """Fast Engine: 快速匹配QRH"""
+        print(f"[FastEngine] 快速匹配QRH...")
+
+        # 简单规则匹配
+        msg = event_data['msg'].upper()
+
+        qrh_keywords = {
+            'OIL PRESSURE': 'low_oil_pressure',
+            'CARBURETOR ICING': 'carburetor_icing',
+            'FUEL IMBALANCE': 'fuel_imbalance',
+            'VACUUM': 'vacuum_failure',
+            'ALTERNATOR': 'alternator_failure',
+            'ENGINE FIRE': 'engine_fire',
+            'ELECTRICAL FIRE': 'electrical_fire'
+        }
+
+        for keyword, qrh_key in qrh_keywords.items():
+            if keyword in msg:
+                print(f"[FastEngine] 匹配到QRH: {qrh_key}")
+                return qrh_key
+
+        return None
+
+    async def _slow_select_qrh(self, event_data: Dict) -> Optional[str]:
+        """Slow Engine: 深度分析QRH选择"""
+        print(f"[SlowEngine] 深度分析QRH...")
+
+        prompt = f"""遇到紧急情况: {event_data['msg']}
+
+可用QRH检查单:
+- low_oil_pressure: 滑油压力低
+- engine_fire: 引擎起火
+- carburetor_icing: 化油器结冰
+- fuel_imbalance: 燃油不平衡
+- vacuum_failure: 真空系统失效
+- alternator_failure: 交流发电机失效
+- electrical_fire: 电气火灾
+
+根据情况描述，选择最合适的检查单。只返回键名。"""
+
+        await asyncio.sleep(self._random_delay(1, 2))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+            qrh_key = self._extract_qrh_key(response)
+            print(f"[SlowEngine] 选择QRH: {qrh_key}")
+            return qrh_key
+        except Exception as e:
+            print(f"[SlowEngine] 错误: {e}")
+            return None
+
+    async def on_checklist_shown(self, checklist_data: Dict):
+        """执行检查单 - Fast Engine快速执行"""
+        items_count = len(checklist_data['items'])
+
+        print(f"[DualProcessAI] 执行检查单: {checklist_data['title']} ({items_count}项)")
+
+        from game_logic import Actor
+        actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+        for i in range(items_count):
+            await asyncio.sleep(self._random_delay(1.5, 3))
+            # 调用统一业务逻辑层
+            self.game_logic.check_item(self.room, i, actor)
+
+    # ==========================================
+    # 新架构：Slow Engine（策略层）+ Fast Engine（执行层）
+    # ==========================================
+
+    async def slow_strategize_pm_verify(self, observation: Observation, pf_decision_data: Dict) -> Strategy:
+        """
+        Slow Engine: PM验证PF决策的策略思考
+
+        Args:
+            observation: 当前观察结果
+            pf_decision_data: PF的决策数据
+
+        Returns:
+            Strategy: 策略建议（思考+评估+建议）
+        """
+        print(f"[SlowEngine] PM验证策略思考...")
+
+        sop_text = "\n".join(pf_decision_data['sop_data']['content'])
+
+        prompt = f"""你是严谨的PM，需要深入分析PF的决策。
+
+【当前情况】
+PF识别的威胁: {pf_decision_data['keyword']}
+PF提出的方案: {pf_decision_data['pf_decision']}
+
+【SOP标准】
+{pf_decision_data['sop_data']['title']}
+{sop_text}
+
+【你的任务】
+评估"PF选择的应对方案是否合理"。注意：不是评估"是否应该继续飞行"，而是评估"PF的应对方案本身"。
+
+【分析框架】
+1. PF是否识别出了威胁？
+2. PF选择的方案是"积极应对"还是"忽视威胁"？
+3. 该方案是否符合SOP？
+
+【判断逻辑】
+✅ 应该同意：PF选择"使用XX标准程序"、"执行XX检查单"、"咨询XX" → 说明在积极应对
+❌ 应该驳回：PF选择"忽略威胁"、"不采取行动"、违反SOP的操作
+
+返回JSON格式（必须严格遵守格式）：
+{{
+    "thinking": "你的详细思考过程",
+    "assessment": {{
+        "threat_recognized": true/false,
+        "pf_approach": "积极应对/忽视威胁/不确定",
+        "sop_compliance": "符合/不符合/部分符合"
+    }},
+    "recommendation": {{
+        "action": "approve/reject",
+        "confidence": "high/medium/low",
+        "reasoning": "推荐理由"
+    }},
+    "next_focus": "下一步关注点"
+}}
+"""
+
+        await asyncio.sleep(self._random_delay(*self.slow_thinking_time))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+            analysis = self._parse_json_response(response)
+
+            # 构建 Strategy 对象
+            strategy = Strategy(
+                thinking=analysis.get('thinking', ''),
+                assessment=analysis.get('assessment', {}),
+                recommendation=analysis.get('recommendation', {}),
+                next_focus=analysis.get('next_focus', '')
+            )
+
+            print(f"[SlowEngine] 策略建议: {strategy.recommendation.get('action', 'N/A')}")
+            print(f"[SlowEngine] 思考: {strategy.thinking[:50]}...")
+
+            # 保存到上下文
+            self.strategic_context['pm_verify_strategy'] = strategy.to_dict()
+
+            return strategy
+
+        except Exception as e:
+            print(f"[SlowEngine] 错误: {e}")
+            # 返回默认策略（同意）
+            return Strategy(
+                thinking="分析出错，采用默认策略",
+                assessment={"error": True},
+                recommendation={"action": "approve", "confidence": "low", "reasoning": "默认同意"},
+                next_focus=""
+            )
+
+    async def fast_execute_pm_verify(self, strategy: Strategy) -> Action:
+        """
+        Fast Engine: 根据策略生成PM验证的具体动作
+
+        Args:
+            strategy: Slow Engine的策略建议
+
+        Returns:
+            Action: 具体执行动作
+        """
+        print(f"[FastEngine] 生成PM验证动作...")
+
+        # 从策略中提取建议
+        recommendation = strategy.recommendation
+        action_type = recommendation.get('action', 'approve')
+
+        # 转换为布尔值
+        approve = (action_type == 'approve')
+
+        # 生成动作
+        action = Action(
+            action_type='pm_verify_decision',
+            params={'approve': approve},
+            execute_immediately=True
+        )
+
+        print(f"[FastEngine] 动作: {'同意' if approve else '驳回'}")
+
+        return action
+
+    # ==========================================
+    # 工具函数
+    # ==========================================
+
+    async def _await_slow_analysis(self, slow_task: asyncio.Task, context_key: str):
+        """等待Slow Engine完成，不阻塞主流程"""
+        try:
+            result = await slow_task
+            print(f"[SlowEngine] 后台分析完成: {context_key}")
+        except Exception as e:
+            print(f"[SlowEngine] 后台分析错误: {e}")
+
+    def _random_delay(self, min_sec: float, max_sec: float) -> float:
+        """生成随机延迟"""
+        import random
+        return random.uniform(min_sec, max_sec)
+
+    def _extract_threat_keyword(self, llm_response: str, source_text: str) -> Optional[str]:
+        """从LLM响应中提取威胁关键词"""
+        from data.phase1_data import PHASE1_THREATS
+
+        # 优先在响应中查找
+        for keyword in PHASE1_THREATS.keys():
+            if keyword in llm_response or keyword in source_text:
+                return keyword
+
+        # 降级：返回第一个威胁
+        return list(PHASE1_THREATS.keys())[0] if PHASE1_THREATS else None
+
+    def _extract_option_id(self, llm_response: str, options: List[Dict]) -> str:
+        """从LLM响应中提取选项ID"""
+        response_lower = llm_response.lower()
+
+        for opt in options:
+            if opt['id'] in response_lower:
+                return opt['id']
+
+        # 降级：返回第一个选项
+        return options[0]['id']
+
+    def _extract_quiz_answer(self, llm_response: str, options: List[Dict]) -> str:
+        """从LLM响应中提取测试题答案"""
+        response_lower = llm_response.lower()
+
+        for opt in options:
+            if opt['id'] in response_lower:
+                return opt['id']
+
+        return options[0]['id']
+
+    def _extract_qrh_key(self, llm_response: str) -> Optional[str]:
+        """从LLM响应中提取QRH键名"""
+        from data.qrh_library import QRH_LIBRARY
+
+        response_upper = llm_response.upper()
+
+        for key, qrh in QRH_LIBRARY.items():
+            if key in llm_response.lower() or qrh['title'] in response_upper:
+                return key
+
+        # 降级：返回第一个QRH
+        return list(QRH_LIBRARY.keys())[0] if QRH_LIBRARY else None
+
+    def _parse_approval(self, llm_response: str) -> bool:
+        """解析同意/驳回"""
+        response_lower = llm_response.lower()
+
+        keywords_approve = ['同意', '正确', '合理', 'approve', 'yes', 'true', '符合']
+        keywords_reject = ['驳回', '错误', '不合理', 'reject', 'no', 'false', '不符合']
+
+        for kw in keywords_reject:
+            if kw in response_lower:
+                return False
+
+        for kw in keywords_approve:
+            if kw in response_lower:
+                return True
+
+        # 默认同意
+        return True
+
+    def _parse_json_response(self, llm_response: str) -> Dict:
+        """解析JSON响应"""
+        import json
+        import re
+
+        try:
+            # 尝试直接解析
+            return json.loads(llm_response)
+        except:
+            # 尝试提取JSON块
+            match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(0))
+                except:
+                    pass
+
+        # 降级：返回空字典
+        return {}

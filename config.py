@@ -53,3 +53,32 @@ WINDOW_GEOMETRY = "1200x800"
 
 # 双模型功能开关
 ENABLE_DUAL_MODEL = True
+
+# ==========================================
+# AI Agent 配置（双过程理论）
+# ==========================================
+
+# AI功能总开关
+AI_ENABLED = True
+
+# 双过程引擎配置
+AI_FAST_MODEL = "gpt-4o-mini"     # System 1: 快速响应引擎
+AI_SLOW_MODEL = "gpt-4o"          # System 2: 深度推理引擎
+
+# 响应延迟配置（秒）
+AI_FAST_RESPONSE_DELAY = (1, 3)   # Fast Engine 响应延迟范围
+AI_SLOW_THINKING_TIME = (3, 6)    # Slow Engine 推理时间范围
+
+# LLM参数
+AI_FAST_TEMPERATURE = 0.5         # Fast Engine 温度（更确定性）
+AI_SLOW_TEMPERATURE = 0.7         # Slow Engine 温度（更多样性）
+AI_FAST_MAX_TOKENS = 500          # Fast Engine 最大tokens
+AI_SLOW_MAX_TOKENS = 2000         # Slow Engine 最大tokens
+
+# 超时配置（秒）
+AI_SLOW_ENGINE_TIMEOUT = 5.0      # Slow Engine 最大等待时间
+AI_LLM_REQUEST_TIMEOUT = 10.0     # 单次LLM请求超时
+
+# 降级策略
+AI_USE_RULE_ENGINE_FALLBACK = True  # LLM失败时使用规则引擎
+AI_MAX_RETRIES = 2                  # LLM请求最大重试次数

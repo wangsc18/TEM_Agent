@@ -8,6 +8,7 @@ import random
 import json
 import os
 from datetime import datetime
+import asyncio
 
 # 导入数据配置
 from data.phase1_data import PHASE1_DATA, PHASE1_THREATS, EMERGENCY_QUIZ
@@ -19,11 +20,60 @@ from data.phase2_advanced import (
 )
 from data.qrh_library import QRH_LIBRARY
 
+# 导入AI Agent和业务逻辑层
+from engines.ai_agent import DualProcessAIAgent
+from engines.text_llm_engine import TextLLMEngine
+from game_logic import GameLogic, Actor
+from config import (
+    OPENAI_API_KEY,
+    CUSTOM_BASE_URL,
+    AI_ENABLED,
+    AI_FAST_MODEL,
+    AI_SLOW_MODEL,
+    AI_FAST_TEMPERATURE,
+    AI_SLOW_TEMPERATURE,
+    AI_FAST_MAX_TOKENS,
+    AI_SLOW_MAX_TOKENS,
+    AI_FAST_RESPONSE_DELAY,
+    AI_SLOW_THINKING_TIME
+)
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'tem_multi_scenario'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 rooms = {}
+
+# ==========================================
+# 初始化业务逻辑层（全局单例）
+# ==========================================
+
+game_logic = None  # 延迟初始化，在log_action定义后
+
+# ==========================================
+# 工具函数：在eventlet中运行async函数
+# ==========================================
+
+def run_async_in_greenlet(coro):
+    """
+    在eventlet greenlet中运行async协程
+    解决eventlet与asyncio不兼容的问题
+    """
+    import asyncio
+
+    def wrapper():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        except Exception as e:
+            print(f"[AsyncRunner] 错误: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            loop.close()
+
+    socketio.start_background_task(wrapper)
 
 # ==========================================
 # 0. 日志记录系统
@@ -70,6 +120,9 @@ def log_action(room, username, role, action, details=None, phase=None):
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
+# 初始化业务逻辑层（全局单例）
+game_logic = GameLogic(rooms, socketio, log_action)
+
 # ==========================================
 # 1. 核心逻辑 - Web 路由
 # ==========================================
@@ -106,6 +159,7 @@ def on_join(data):
             "phase1_threats": {},  # 追踪每个威胁的处理状态
             "phase1_quiz_results": [],  # 存储测试题结果
             "pending_decision": None,  # 当前等待 PM 验证的决策
+            "pending_decisions_queue": [],  # PM验证决策队列（支持AI异步处理多个威胁）
             # Phase 2 高级功能状态
             "event_queue": [],  # 当前场景的事件队列
             "current_event_index": -1,  # 当前处理到第几个事件
@@ -113,7 +167,12 @@ def on_join(data):
             "event_detections": {},  # 记录每个事件的检测情况 {event_id: {'detected_at': 'precursor'/'alert', 'timestamp': float}}
             "gauge_states": {},  # 当前所有仪表的实时状态
             "sim_start_time": None,  # Phase 2 模拟开始时间
-            "used_qrh": set()  # 已使用的 QRH 检查单
+            "used_qrh": set(),  # 已使用的 QRH 检查单
+            # AI Agent 状态（新增）
+            "mode": "dual_player",  # "dual_player" or "single_player"
+            "ai_enabled": False,     # 是否启用AI
+            "ai_agent": None,        # DualProcessAIAgent 实例
+            "human_sid": None        # 单人模式下的人类session_id
         }
 
         # 写入会话开始日志
@@ -129,23 +188,110 @@ def on_join(data):
     # 存储用户信息
     username = data['username']
     role = data['role']
+    mode = data.get('mode', 'dual_player')  # 新增：从前端获取模式
 
-    # === 核心修复：房间人数限制 ===
-    # 检查房间是否已满（最多2人）
-    if len(rooms[room]['users']) >= 2:
-        # 房间已满，拒绝加入
-        emit('room_full', {
-            'msg': f"房间 {room} 已满（2/2人），请选择其他房间号或等待当前训练结束。",
-            'room': room,
-            'current_users': len(rooms[room]['users'])
-        })
-        return  # 不加入房间
+    # === 核心修改：支持单人+AI模式 ===
+    if mode == 'single_player' and AI_ENABLED:
+        print(f"[AI Mode] 创建单人+AI训练房间 {room}")
 
-    # 房间未满，允许加入
-    rooms[room]['users'][request.sid] = {
-        'username': username,
-        'role': role
-    }
+        # 设置单人模式
+        rooms[room]['mode'] = 'single_player'
+        rooms[room]['ai_enabled'] = True
+        rooms[room]['human_sid'] = request.sid
+
+        # 确定AI角色（与人类相反）
+        ai_role = "PM" if role == "PF" else "PF"
+
+        # 创建双引擎LLM
+        fast_engine = TextLLMEngine(
+            api_key=OPENAI_API_KEY,
+            base_url=CUSTOM_BASE_URL,
+            model=AI_FAST_MODEL,
+            system_prompt=f"你是一名专业的航空飞行员，角色是{ai_role}。你的回答要简洁、快速、准确。",
+            temperature=AI_FAST_TEMPERATURE,
+            max_tokens=AI_FAST_MAX_TOKENS
+        )
+
+        slow_engine = TextLLMEngine(
+            api_key=OPENAI_API_KEY,
+            base_url=CUSTOM_BASE_URL,
+            model=AI_SLOW_MODEL,
+            system_prompt=f"你是一名经验丰富的航空飞行员，角色是{ai_role}。你需要深入分析情况，提供详细的策略和理由。",
+            temperature=AI_SLOW_TEMPERATURE,
+            max_tokens=AI_SLOW_MAX_TOKENS
+        )
+
+        # 创建双过程AI Agent
+        ai_agent = DualProcessAIAgent(
+            room=room,
+            role=ai_role,
+            fast_engine=fast_engine,
+            slow_engine=slow_engine,
+            socketio=socketio,
+            game_logic=game_logic,  # 传入业务逻辑层
+            config={
+                'fast_response_delay': AI_FAST_RESPONSE_DELAY,
+                'slow_thinking_time': AI_SLOW_THINKING_TIME
+            }
+        )
+
+        rooms[room]['ai_agent'] = ai_agent
+
+        # 添加人类用户
+        rooms[room]['users'][request.sid] = {
+            'username': username,
+            'role': role,
+            'is_ai': False
+        }
+
+        # 添加AI用户（虚拟session_id）
+        rooms[room]['users'][ai_agent.fake_sid] = {
+            'username': f"AI {ai_role}",
+            'role': ai_role,
+            'is_ai': True
+        }
+
+        # 记录AI加入
+        log_action(room, f"AI {ai_role}", ai_role, "ai_joined",
+                   details={
+                       "ai_mode": "dual_process",
+                       "fast_model": AI_FAST_MODEL,
+                       "slow_model": AI_SLOW_MODEL
+                   },
+                   phase="waiting")
+
+        # 达到2人（1人+AI），启动训练
+        rooms[room]['current_phase'] = "phase1"
+        socketio.emit('start_phase_1', {"data": PHASE1_DATA}, room=room)
+
+        # 触发AI准备（使用通用异步运行器）
+        run_async_in_greenlet(ai_agent.on_phase1_start(PHASE1_DATA))
+
+        # 通知房间内人数
+        socketio.emit('user_count_update', {
+            'count': 2,
+            'usernames': [username, f"🤖 AI {ai_role}"]
+        }, room=room)
+
+        print(f"[AI Mode] 单人+AI模式启动成功: {username} ({role}) + AI ({ai_role})")
+
+    else:
+        # === 双人模式：原有逻辑 ===
+        # 检查房间是否已满（最多2人）
+        if len(rooms[room]['users']) >= 2:
+            # 房间已满，拒绝加入
+            emit('room_full', {
+                'msg': f"房间 {room} 已满（2/2人），请选择其他房间号或等待当前训练结束。",
+                'room': room,
+                'current_users': len(rooms[room]['users'])
+            })
+            return  # 不加入房间
+
+        # 房间未满，允许加入
+        rooms[room]['users'][request.sid] = {
+            'username': username,
+            'role': role
+        }
 
     # 记录用户加入
     log_action(room, username, role, "user_joined",
@@ -181,38 +327,22 @@ def handle_pf_identify(data):
     username = user_info['username']
     user_role = user_info['role']
 
-    # 验证是否为 PF
-    if user_role != 'PF':
-        emit('error_msg', {'msg': "只有 PF 可以识别威胁"})
+    # 调用统一业务逻辑层
+    actor = Actor(username, user_role, is_ai=False, sid=request.sid)
+    success = game_logic.pf_identify_threat(room, keyword, actor)
+
+    if not success:
+        emit('error_msg', {'msg': "威胁识别失败"})
         return
 
-    # 检查关键词是否在威胁库中
-    if keyword not in PHASE1_THREATS:
-        log_action(room, username, user_role, "identify_invalid_threat",
-                   details={"keyword": keyword},
-                   phase="phase1")
-        emit('error_msg', {'msg': f"'{keyword}' 不是有效的威胁关键词"})
-        return
-
-    # 检查是否已处理过此威胁
-    if keyword in rooms[room]['phase1_threats']:
-        emit('error_msg', {'msg': f"威胁 '{keyword}' 已经处理过了"})
-        return
-
-    # 记录 PF 识别威胁
-    log_action(room, username, user_role, "pf_identify_threat",
-               details={"keyword": keyword},
-               phase="phase1")
-
-    # 获取威胁数据
+    # 获取威胁数据用于AI触发
     threat_data = PHASE1_THREATS[keyword]
 
-    # 发送决策模态框给 PF
-    emit('show_pf_decision_modal', {
-        'keyword': keyword,
-        'description': threat_data['description'],
-        'options': threat_data['options']
-    })
+    # === AI触发：如果AI是PF，触发AI决策 ===
+    if rooms[room]['ai_enabled']:
+        ai_agent = rooms[room]['ai_agent']
+        if ai_agent and ai_agent.role == "PF":
+            run_async_in_greenlet(ai_agent.on_pf_decision_request(keyword, threat_data))
 
 
 @socketio.on('pf_submit_decision')
@@ -227,66 +357,30 @@ def handle_pf_decision(data):
     username = user_info['username']
     user_role = user_info['role']
 
-    # 验证是否为 PF
-    if user_role != 'PF':
-        return
+    # 调用统一业务逻辑层
+    actor = Actor(username, user_role, is_ai=False, sid=request.sid)
+    game_logic.pf_submit_decision(room, keyword, selected_option_id, actor)
 
-    # 获取威胁数据
-    threat_data = PHASE1_THREATS[keyword]
-
-    # 找到选中的选项
-    selected_option = next((opt for opt in threat_data['options'] if opt['id'] == selected_option_id), None)
-
-    if not selected_option:
-        return
-
-    # 保存待验证的决策
-    rooms[room]['pending_decision'] = {
-        'keyword': keyword,
-        'option_id': selected_option_id,
-        'option_text': selected_option['text'],
-        'is_correct': selected_option.get('correct', False),
-        'pf_username': username
-    }
-
-    # 记录 PF 决策
-    log_action(room, username, user_role, "pf_submit_decision",
-               details={
-                   "keyword": keyword,
-                   "option_id": selected_option_id,
-                   "option_text": selected_option['text'],
-                   "is_correct": selected_option.get('correct', False)
-               },
-               phase="phase1")
-
-    # 找到 PM 并发送验证请求
-    pm_sid = None
-    for sid, user in rooms[room]['users'].items():
-        if user['role'] == 'PM':
-            pm_sid = sid
-            break
-
-    if pm_sid:
-        # 发送给 PM 进行验证
-        socketio.emit('show_pm_verify_panel', {
-            'keyword': keyword,
-            'pf_username': username,
-            'pf_decision': selected_option['text'],
-            'sop_data': threat_data['sop_data']
-        }, room=pm_sid)
-
-        # 通知 PF 等待 PM 验证
-        emit('waiting_pm_verify', {
-            'keyword': keyword,
-            'msg': f"等待 PM 验证方案..."
-        })
+    # === AI触发：如果AI是PM，触发AI验证 ===
+    if rooms[room]['ai_enabled']:
+        ai_agent = rooms[room]['ai_agent']
+        if ai_agent and ai_agent.role == "PM":
+            threat_data = PHASE1_THREATS[keyword]
+            selected_option = next((opt for opt in threat_data['options'] if opt['id'] == selected_option_id), None)
+            pm_data = {
+                'keyword': keyword,
+                'pf_username': username,
+                'pf_decision': selected_option['text'],
+                'sop_data': threat_data['sop_data']
+            }
+            run_async_in_greenlet(ai_agent.on_pm_verify_request(pm_data))
 
 
 @socketio.on('pm_verify_decision')
 def handle_pm_verify(data):
-    """PM 验证 PF 的决策"""
+    """PM 验证 PF 的决策（socketio事件入口）"""
     room = data['room']
-    approved = data['approved']  # True = 同意, False = 驳回
+    approved = data['approved']
 
     # 获取用户信息
     user_info = rooms[room]['users'][request.sid]
@@ -297,83 +391,9 @@ def handle_pm_verify(data):
     if user_role != 'PM':
         return
 
-    # 获取待验证的决策
-    pending = rooms[room].get('pending_decision')
-    if not pending:
-        return
-
-    keyword = pending['keyword']
-    pf_is_correct = pending['is_correct']
-
-    # 获取威胁数据
-    threat_data = PHASE1_THREATS[keyword]
-    scores = threat_data['scores']
-
-    # 计算分数和结果
-    if pf_is_correct and approved:
-        # PF 正确 + PM 同意 = 最佳结果
-        score_change = scores['pf_correct_pm_approve']
-        result = "success"
-        msg = f"✅ 双方协同正确！威胁 '{keyword}' 处置得当。"
-        color = "green"
-    elif pf_is_correct and not approved:
-        # PF 正确 + PM 驳回 = PM 判断失误
-        score_change = scores['pf_correct_pm_reject']
-        result = "pm_error"
-        msg = f"⚠️ PM 驳回了正确方案，需要重新评估。"
-        color = "orange"
-    elif not pf_is_correct and approved:
-        # PF 错误 + PM 同意 = 双人共同失误（严重）
-        score_change = scores['pf_wrong_pm_approve']
-        result = "critical_error"
-        msg = f"❌ 严重：PF 方案错误且 PM 未发现，双人失误！"
-        color = "red"
-    else:
-        # PF 错误 + PM 驳回 = PM 成功发现错误
-        score_change = scores['pf_wrong_pm_reject']
-        result = "pm_catch"
-        msg = f"✅ PM 成功识别错误方案，威胁管理有效。"
-        color = "yellow"
-
-    # 更新分数
-    rooms[room]['score'] += score_change
-
-    # 记录威胁处理结果
-    rooms[room]['phase1_threats'][keyword] = {
-        'pf_decision': pending['option_text'],
-        'pf_correct': pf_is_correct,
-        'pm_approved': approved,
-        'result': result,
-        'score_change': score_change
-    }
-
-    # 清除待验证决策
-    rooms[room]['pending_decision'] = None
-
-    # 记录日志
-    log_action(room, username, user_role, "pm_verify_decision",
-               details={
-                   "keyword": keyword,
-                   "approved": approved,
-                   "pf_decision": pending['option_text'],
-                   "pf_correct": pf_is_correct,
-                   "result": result,
-                   "score_change": score_change
-               },
-               phase="phase1")
-
-    # 广播结果给双方
-    socketio.emit('threat_decision_result', {
-        'keyword': keyword,
-        'result': result,
-        'msg': msg,
-        'color': color,
-        'score_change': score_change
-    }, room=room)
-
-    # 更新分数显示
-    socketio.emit('update_score', {'score': rooms[room]['score']}, room=room)
-
+    # 调用统一业务逻辑层
+    actor = Actor(username, user_role, is_ai=False, sid=request.sid)
+    game_logic.pm_verify_decision(room, approved, actor)
 
 # --- Phase 1: 紧急预案测试 ---
 @socketio.on('start_emergency_quiz')
@@ -391,6 +411,13 @@ def handle_start_quiz(data):
         'questions': EMERGENCY_QUIZ
     }, room=room)
 
+    # === AI触发：如果AI是PM，触发AI答题 ===
+    if rooms[room]['ai_enabled']:
+        ai_agent = rooms[room]['ai_agent']
+        if ai_agent and ai_agent.role == "PM":
+            # 传入所有题目，让AI内部顺序处理（避免多个event loop冲突）
+            run_async_in_greenlet(ai_agent.on_quiz_questions(EMERGENCY_QUIZ))
+
 
 @socketio.on('submit_quiz_answer')
 def handle_quiz_answer(data):
@@ -404,56 +431,9 @@ def handle_quiz_answer(data):
     username = user_info['username']
     user_role = user_info['role']
 
-    # 验证是否为 PM
-    if user_role != 'PM':
-        emit('error_msg', {'msg': "测试题应由 PM 操作"})
-        return
-
-    # 找到对应的题目
-    question = next((q for q in EMERGENCY_QUIZ if q['id'] == question_id), None)
-    if not question:
-        return
-
-    # 判断答案是否正确
-    correct_option = next((opt for opt in question['options'] if opt.get('correct', False)), None)
-    is_correct = (selected_answer == correct_option['id']) if correct_option else False
-
-    # 计算分数
-    score_change = 10 if is_correct else -5
-
-    # 更新分数
-    rooms[room]['score'] += score_change
-
-    # 保存测试结果
-    rooms[room]['phase1_quiz_results'].append({
-        'question_id': question_id,
-        'question': question['question'],
-        'answer': selected_answer,
-        'correct': is_correct,
-        'score_change': score_change
-    })
-
-    # 记录日志
-    log_action(room, username, user_role, "quiz_answer_submitted",
-               details={
-                   "question_id": question_id,
-                   "question": question['question'],
-                   "answer": selected_answer,
-                   "correct": is_correct,
-                   "score_change": score_change
-               },
-               phase="phase1")
-
-    # 广播结果
-    socketio.emit('quiz_answer_result', {
-        'question_id': question_id,
-        'correct': is_correct,
-        'explanation': question['explanation'],
-        'score_change': score_change
-    }, room=room)
-
-    # 更新分数
-    socketio.emit('update_score', {'score': rooms[room]['score']}, room=room)
+    # 调用统一业务逻辑层
+    actor = Actor(username, user_role, is_ai=False, sid=request.sid)
+    game_logic.submit_quiz_answer(room, question_id, selected_answer, actor)
 
 
 @socketio.on('req_phase_2')
@@ -683,6 +663,17 @@ def run_sim_loop(room):
                             'progress': progress
                         }, room=room)
 
+                        # === AI触发：事件警报时，AI选择QRH ===
+                        if rooms[room]['ai_enabled']:
+                            ai_agent = rooms[room]['ai_agent']
+                            if ai_agent:
+                                event_data = {
+                                    'type': alert['type'],
+                                    'msg': alert['message'],
+                                    'progress': progress
+                                }
+                                run_async_in_greenlet(ai_agent.on_event_alert(event_data))
+
                         # 如果用户之前没有在征兆阶段检测到，给予警报反应分数
                         if event_id not in rooms[room]['event_detections']:
                             rooms[room]['event_detections'][event_id] = {
@@ -772,22 +763,9 @@ def handle_monitor_gauge(data):
     username = user_info['username']
     user_role = user_info['role']
 
-    # 添加到监控集合
-    rooms[room]['monitored_gauges'].add(gauge_id)
-
-    # 记录日志
-    log_action(room, username, user_role, "monitor_gauge",
-               details={
-                   "gauge_id": gauge_id,
-                   "gauge_name": GAUGE_CONFIGS[gauge_id]['name']
-               },
-               phase="phase2")
-
-    # 通知前端该仪表已被标记
-    socketio.emit('gauge_monitored', {
-        'gauge_id': gauge_id,
-        'msg': f"已标记监控: {GAUGE_CONFIGS[gauge_id]['name']}"
-    }, room=room)
+    # 调用统一业务逻辑层
+    actor = Actor(username, user_role, is_ai=False, sid=request.sid)
+    game_logic.monitor_gauge(room, gauge_id, actor)
 
 # --- Phase 3: 动态决策判定 ---
 @socketio.on('select_checklist')
@@ -800,49 +778,25 @@ def handle_select(data):
     username = user_info['username']
     user_role = user_info['role']
 
-    # 检查是否已经使用过这个 QRH
-    if selected_key in rooms[room]['used_qrh']:
+    # 调用统一业务逻辑层
+    actor = Actor(username, user_role, is_ai=False, sid=request.sid)
+    success = game_logic.select_qrh(room, selected_key, actor)
+
+    if not success:
         emit('error_msg', {'msg': f"该检查单已经执行过了，请选择其他应急程序"})
         return
 
-    # 更新当前阶段
-    rooms[room]['current_phase'] = "phase3"
-
-    # 记录使用的 QRH
-    rooms[room]['used_qrh'].add(selected_key)
-    rooms[room]['current_qrh'] = selected_key  # 记录当前使用的 QRH
-
-    # === 核心修改：根据当前剧本判断对错（支持多正确答案） ===
-    current_scenario = rooms[room]['current_scenario']
-    acceptable_qrh_list = current_scenario.get('acceptable_qrh', [])
-
-    qrh = QRH_LIBRARY.get(selected_key)
-    rooms[room]['checked_items'] = set()
-    rooms[room]['active_checklist_len'] = len(qrh['items'])
-
-    is_correct = (selected_key in acceptable_qrh_list)
-
-    if is_correct:
-        rooms[room]['score'] += 20
-        msg = f"✅ 决策正确：{qrh['title']} 是合适的应对方案"
-    else:
-        rooms[room]['score'] -= 20  # 加重惩罚
-        acceptable_names = [QRH_LIBRARY[k]['title'] for k in acceptable_qrh_list if k in QRH_LIBRARY]
-        msg = f"❌ 决策错误：当前故障是 {current_scenario['name']}，应该选择 {' 或 '.join(acceptable_names)}"
-
-    # 记录QRH选择
-    log_action(room, username, user_role, "select_qrh",
-               details={
-                   "selected_qrh": selected_key,
-                   "qrh_title": qrh['title'],
-                   "acceptable_qrh": acceptable_qrh_list,
-                   "is_correct": is_correct,
-                   "score_change": 20 if is_correct else -20
-               },
-               phase="phase3")
-
-    emit('show_checklist', {'title': qrh['title'], 'items': qrh['items'], 'msg': msg}, room=room)
-    emit('update_score', {'score': rooms[room]['score']}, room=room)
+    # === AI触发：显示检查单后，AI执行检查单 ===
+    if rooms[room]['ai_enabled']:
+        ai_agent = rooms[room]['ai_agent']
+        if ai_agent:
+            qrh = QRH_LIBRARY.get(selected_key)
+            checklist_data = {
+                'title': qrh['title'],
+                'items': qrh['items'],
+                'msg': ''  # AI不需要msg
+            }
+            run_async_in_greenlet(ai_agent.on_checklist_shown(checklist_data))
 
 @socketio.on('check_item')
 def handle_check(data):
@@ -854,35 +808,9 @@ def handle_check(data):
     username = user_info['username']
     user_role = user_info['role']
 
-    rooms[room]['checked_items'].add(idx)
-
-    # 记录检查单项目完成
-    log_action(room, username, user_role, "check_item",
-               details={
-                   "item_index": idx,
-                   "checked_count": len(rooms[room]['checked_items']),
-                   "total_items": rooms[room]['active_checklist_len']
-               },
-               phase=rooms[room]['current_phase'])
-
-    emit('item_checked', {'index': idx, 'role': user_role}, room=room)
-
-    # 检查单完成后，不结束训练，只是关闭检查单面板
-    if len(rooms[room]['checked_items']) == rooms[room]['active_checklist_len']:
-        # 记录检查单完成
-        log_action(room, "SYSTEM", "SYSTEM", "checklist_complete",
-                   details={
-                       "checked_count": len(rooms[room]['checked_items']),
-                       "total_items": rooms[room]['active_checklist_len'],
-                       "qrh_key": rooms[room].get('current_qrh')
-                   },
-                   phase=rooms[room]['current_phase'])
-
-        # 通知前端检查单完成（不是任务完成）
-        socketio.emit('checklist_complete', {
-            'msg': "✅ 检查单完成！继续监控飞行...",
-            'qrh_key': rooms[room].get('current_qrh')  # 传递完成的 QRH key，用于清除对应告警
-        }, room=room)
+    # 调用统一业务逻辑层
+    actor = Actor(username, user_role, is_ai=False, sid=request.sid)
+    game_logic.check_item(room, idx, actor)
 
 # --- 用户断开连接处理 ---
 @socketio.on('disconnect')

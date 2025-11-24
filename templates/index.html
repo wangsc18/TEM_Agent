@@ -134,6 +134,18 @@
             <div class="panel p-4 text-center">
                 <h3 class="mb-3">飞行准备</h3>
 
+                <!-- 新增：训练模式选择 -->
+                <div class="mb-3 text-start">
+                    <label class="form-label text-muted small">训练模式 (Training Mode)</label>
+                    <select id="mode" class="form-select bg-dark text-white border-secondary">
+                        <option value="dual_player">🧑‍✈️🧑‍✈️ 双人协作模式 (2 Players)</option>
+                        <option value="single_player">🧑‍✈️🤖 单人+AI模式 (1 Player + AI Partner)</option>
+                    </select>
+                    <small class="text-muted" style="font-size: 0.7em">
+                        单人模式：AI将扮演另一个角色与你协作训练
+                    </small>
+                </div>
+
                 <div class="mb-3 text-start">
                     <label class="form-label text-muted small">训练房间号 (Room ID)</label>
                     <input id="room-id" class="form-control bg-dark text-white border-secondary" placeholder="例如: 8888">
@@ -366,6 +378,7 @@
         const u = document.getElementById('username').value;
         const r = document.getElementById('role').value;
         const inputRoom = document.getElementById('room-id').value;
+        const mode = document.getElementById('mode').value;  // 新增：获取训练模式
 
         if(!u) return alert("请输入您的呼号");
         if(!inputRoom) return alert("请输入房间号 (例如: 101)");
@@ -373,7 +386,12 @@
         room = inputRoom;
         myRole = r;
 
-        socket.emit('join', {username: u, role: r, room: room});
+        socket.emit('join', {
+            username: u,
+            role: r,
+            room: room,
+            mode: mode  // 新增：发送训练模式
+        });
         document.getElementById('login-panel').style.display = 'none';
         document.getElementById('sim-area').style.display = 'block';
 
