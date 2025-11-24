@@ -54,7 +54,33 @@ class ActionExecutor:
 
         return action
 
+    def execute_pf_decision(self, strategy: Strategy) -> Action:
+        """
+        根据策略生成PF决策的具体动作
+
+        Args:
+            strategy: Slow Engine的策略建议
+
+        Returns:
+            Action: 具体执行动作（包含选项ID）
+        """
+        print(f"[FastEngine] 生成PF决策动作...")
+
+        # 从策略中提取推荐的选项ID
+        recommendation = strategy.recommendation
+        option_id = recommendation.get('action', '')
+
+        # 生成动作
+        action = Action(
+            action_type='pf_submit_decision',
+            params={'option_id': option_id},
+            execute_immediately=True
+        )
+
+        print(f"[FastEngine] 动作: 提交方案 {option_id}")
+
+        return action
+
     # TODO: 添加更多执行方法
-    # - execute_pf_decision: PF决策动作
     # - execute_qrh_selection: QRH选择动作
     # - execute_gauge_monitoring: 仪表监控动作

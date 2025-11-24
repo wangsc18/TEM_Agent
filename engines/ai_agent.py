@@ -16,8 +16,7 @@ from typing import Dict, Any, Optional, List
 from .ai_core import (
     Observation, Strategy, Action,
     StateObserver, StrategyGenerator, ActionExecutor,
-    random_delay, extract_option_id, extract_quiz_answer, extract_threat_keyword,
-    extract_qrh_key, detect_abnormal_gauges
+    random_delay, extract_quiz_answer, extract_qrh_key, detect_abnormal_gauges
 )
 from .text_llm_engine import TextLLMEngine
 
@@ -152,140 +151,64 @@ class DualProcessAIAgent:
 
     async def on_pf_decision_request(self, keyword: str, threat_data: Dict):
         """
-        PF决策请求 - 双过程协作（旧架构，待迁移）
+        PF决策请求 - 使用新架构
+
+        流程：观察 → 策略 → 动作 → 执行
 
         Args:
             keyword: 威胁关键词
             threat_data: 威胁详细数据
-
-        TODO: 迁移到新架构（观察→策略→动作→执行）
         """
         if self.role != "PF":
             return
 
         print(f"[DualProcessAI] PF 收到决策请求: {keyword}")
+        print(f"[新架构] 开始 观察→策略→动作→执行 流程")
 
-        # === System 1: Fast Engine 快速决策 ===
-        fast_task = asyncio.create_task(self._fast_make_decision(threat_data))
+        # 步骤1: 观察（从room_state提取信息）
+        room_state = self.game_logic.rooms.get(self.room, {})
+        observation = self.observer.observe(room_state)
+        print(f"[观察层] Phase: {observation.phase}, Role: {observation.role}")
 
-        # === System 2: Slow Engine 验证和优化决策 ===
-        slow_task = asyncio.create_task(self._slow_verify_decision(keyword, threat_data))
+        # 准备完整的威胁数据（包含keyword）
+        full_threat_data = {
+            'keyword': keyword,
+            'description': threat_data.get('description', ''),
+            'options': threat_data.get('options', []),
+            'sop_data': threat_data.get('sop_data', {})
+        }
 
-        # 先等待Fast Engine的初步决策
-        initial_decision = await fast_task
+        # 步骤2: Slow Engine 生成策略（包含推荐选项和解释）
+        strategy = await self.strategy_gen.strategize_pf_decision(observation, full_threat_data)
+        print(f"[策略层] 推荐方案: {strategy.recommendation}")
 
-        # 等待Slow Engine验证（但设置超时）
-        try:
-            # 超时时间设置为10秒，足够Slow Engine完成深度推理
-            strategic_decision = await asyncio.wait_for(slow_task, timeout=10.0)
+        # 步骤3: Fast Engine 生成动作
+        action = self.executor.execute_pf_decision(strategy)
+        print(f"[执行层] 动作: {action.to_dict()}")
 
-            # 如果Slow Engine有不同意见，采用它的决策
-            if strategic_decision and strategic_decision != initial_decision:
-                print(f"[DualProcessAI] Slow Engine修正决策: {initial_decision} → {strategic_decision}")
-                final_decision = strategic_decision
+        # 步骤4: 执行动作
+        from game_logic import Actor
+        actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+        if action.action_type == 'pf_submit_decision':
+            option_id = action.params.get('option_id', '')
+            if option_id:
+                success = self.game_logic.pf_submit_decision(self.room, keyword, option_id, actor)
+                if success:
+                    print(f"[执行完成] PF决策: {option_id} - 已提交到PM验证")
+                else:
+                    print(f"[执行失败] PF决策提交失败: {option_id}")
+                    return
             else:
-                final_decision = initial_decision
-        except asyncio.TimeoutError:
-            print(f"[DualProcessAI] Slow Engine超时，使用Fast决策")
-            final_decision = initial_decision
+                print(f"[执行失败] 未获取到有效的option_id")
+                return
 
-        print(f"[DualProcessAI] 最终决策: {final_decision}")
-
-        # 提交最终决策
-        if final_decision:
-            print(f"[DualProcessAI] 准备提交决策: keyword={keyword}, option_id={final_decision}")
-            from game_logic import Actor
-            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
-            self.game_logic.pf_submit_decision(self.room, keyword, final_decision, actor)
-            print(f"[DualProcessAI] 决策已提交")
-        else:
-            print(f"[DualProcessAI] 错误: final_decision 为空，无法提交")
-
-    async def _fast_make_decision(self, threat_data: Dict) -> Optional[str]:
-        """Fast Engine: 快速决策（旧架构）"""
-        print(f"[FastEngine] 快速分析应对方案...")
-
-        options_text = "\n".join([
-            f"{opt['id']}: {opt['text']}"
-            for opt in threat_data['options']
-        ])
-
-        prompt = f"""威胁: {threat_data['description']}
-
-方案:
-{options_text}
-
-立即选择最合适的方案，只返回选项ID（option_a/option_b/option_c）。"""
-
-        await asyncio.sleep(random_delay(1, 2))
-
-        try:
-            response = await self.fast_engine.chat(prompt, stream=False)
-            option_id = extract_option_id(response, threat_data['options'])
-            print(f"[FastEngine] 快速决策: {option_id}")
-            return option_id
-        except Exception as e:
-            print(f"[FastEngine] 错误: {e}")
-            return None
-
-    async def _slow_verify_decision(self, keyword: str, threat_data: Dict) -> Optional[str]:
-        """
-        Slow Engine: 验证和优化决策（旧架构）
-
-        Args:
-            keyword: 威胁关键词
-            threat_data: 威胁详细数据
-        """
-        print(f"[SlowEngine] 深度验证决策...")
-
-        options_text = "\n".join([
-            f"{opt['id']}: {opt['text']}"
-            for opt in threat_data['options']
-        ])
-
-        # 获取之前的威胁分析上下文
-        threat_analysis = self.strategic_context.get('phase1_threats', {})
-
-        prompt = f"""你是经验丰富的{self.role}，需要仔细评估应对方案。
-
-威胁: {keyword} - {threat_data['description']}
-
-之前的威胁分析:
-{threat_analysis}
-
-可选方案:
-{options_text}
-
-请从以下角度深入分析：
-1. 方案的安全性和合规性
-2. 与SOP的符合度
-3. 执行的可行性
-4. 潜在的后续影响
-
-返回JSON:
-{{
-    "recommended_option": "option_id",
-    "reasoning": "详细理由",
-    "risks": "潜在风险"
-}}
-"""
-
-        await asyncio.sleep(random_delay(2, 4))
-
-        try:
-            response = await self.slow_engine.chat(prompt, stream=False)
-            from .ai_core.utils import parse_json_response
-            analysis = parse_json_response(response)
-            recommended = analysis.get('recommended_option')
-
-            # 保存推理上下文
-            self.strategic_context['last_decision'] = analysis
-
-            print(f"[SlowEngine] 推荐方案: {recommended} - {analysis.get('reasoning', '')[:50]}")
-            return recommended
-        except Exception as e:
-            print(f"[SlowEngine] 错误: {e}")
-            return None
+        # 步骤5: 发送解释消息（如果有）
+        if strategy.explanation:
+            print(f"[解释发送] {strategy.explanation}")
+            # 延迟一下再发送，让决策结果先显示
+            await asyncio.sleep(0.5)
+            self.game_logic.send_ai_message(self.room, strategy.explanation, actor)
 
     async def on_pm_verify_request(self, pf_decision_data: Dict):
         """

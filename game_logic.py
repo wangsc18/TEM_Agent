@@ -46,7 +46,7 @@ class GameLogic:
     # 通用方法
     # ==========================================
 
-    def send_ai_message(self, room: str, message: str, actor: Actor) -> bool:
+    def send_ai_message(self, room: str, message: str, actor: Actor, enable_tts: bool = True) -> bool:
         """
         AI发送聊天消息
 
@@ -54,6 +54,7 @@ class GameLogic:
             room: 房间ID
             message: 消息内容
             actor: AI Actor信息
+            enable_tts: 是否启用TTS语音（默认True）
 
         Returns:
             bool: 是否发送成功
@@ -80,7 +81,7 @@ class GameLogic:
 
         # 记录日志
         self.log_action(room, actor.username, actor.role, "ai_chat_message",
-                       details={"message": message},
+                       details={"message": message, "enable_tts": enable_tts},
                        phase=self.rooms[room].get('current_phase', 'unknown'))
 
         # 广播消息给房间内所有人
@@ -88,7 +89,8 @@ class GameLogic:
             'username': actor.username,
             'role': actor.role,
             'message': message,
-            'timestamp': chat_record['timestamp']
+            'timestamp': chat_record['timestamp'],
+            'enable_tts': enable_tts  # 新增：告知前端是否需要TTS
         }, room=room)
 
         return True

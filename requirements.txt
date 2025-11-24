@@ -23,3 +23,8 @@ python-socks[asyncio]>=2.0.0
 
 # Optional: Edge TTS for ultra-fast speech synthesis (recommended)
 edge-tts>=6.1.0
+
+# Web application dependencies
+flask>=2.0.0
+flask-socketio>=5.0.0
+eventlet>=0.33.0

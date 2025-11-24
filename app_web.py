@@ -1,5 +1,6 @@
 import eventlet
-eventlet.monkey_patch()
+# 关键：不要 patch threading，保留原生线程用于 TTS
+eventlet.monkey_patch(thread=False)
 
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
@@ -9,6 +10,9 @@ import json
 import os
 from datetime import datetime
 import asyncio
+import base64
+import threading
+import queue
 
 # 导入数据配置
 from data.phase1_data import PHASE1_DATA, PHASE1_THREATS, EMERGENCY_QUIZ
@@ -45,12 +49,113 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 rooms = {}
 
 # ==========================================
+# TTS 语音生成 - 原生线程生成，队列传递，greenlet发送
+# ==========================================
+
+# TTS音频队列（线程安全）
+_tts_audio_queue = queue.Queue()
+
+async def _generate_tts_audio_only(text: str, voice: str):
+    """
+    纯音频生成（运行在原生线程中）
+
+    Args:
+        text: 要转换的文本
+        voice: 语音类型
+
+    Returns:
+        bytes: 音频数据
+    """
+    import edge_tts
+    communicate = edge_tts.Communicate(text, voice)
+    audio_bytes = b""
+
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_bytes += chunk["data"]
+
+    return audio_bytes
+
+def _tts_sender_loop():
+    """
+    TTS发送循环（运行在greenlet中，从队列取数据发送）
+    """
+    while True:
+        try:
+            # 从队列获取数据（阻塞等待）
+            data = _tts_audio_queue.get(timeout=0.1)
+            if data is None:
+                continue
+
+            room, message_id, sentence_index, audio_bytes = data
+
+            if not audio_bytes:
+                print(f"[TTS] 警告: 没有音频数据")
+                continue
+
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            print(f"[TTS] 音频生成成功: {len(audio_bytes)} 字节")
+
+            # 在greenlet中发送
+            socketio.emit('tts_audio', {
+                'message_id': message_id,
+                'sentence_index': sentence_index,
+                'audio_base64': audio_base64
+            }, room=room)
+            print(f"[TTS] 句子 #{sentence_index} 音频已发送")
+
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print(f"[TTS] 发送错误: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # 让出控制权给其他greenlet
+        eventlet.sleep(0)
+
+def submit_tts_request(text: str, room: str, message_id: str,
+                      sentence_index: int, voice: str = "zh-CN-XiaoxiaoNeural"):
+    """
+    提交TTS请求（原生线程生成 + 队列传递 + greenlet发送）
+
+    Args:
+        text: 要转换的文本
+        room: 房间ID
+        message_id: 消息ID
+        sentence_index: 句子索引
+        voice: 语音类型
+    """
+    print(f"[TTS] 请求: 句子 #{sentence_index}: {text[:30]}...")
+
+    def run_in_thread():
+        """在原生线程中生成音频"""
+        try:
+            print(f"[TTS] 开始生成音频...")
+
+            # 原生线程中生成音频
+            audio_bytes = asyncio.run(_generate_tts_audio_only(text, voice))
+
+            print(f"[TTS] 音频生成完成，大小: {len(audio_bytes)} 字节")
+
+            # 把音频数据放入队列（线程安全）
+            _tts_audio_queue.put((room, message_id, sentence_index, audio_bytes))
+
+        except Exception as e:
+            print(f"[TTS] 生成错误: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # 使用原生线程生成音频
+    thread = threading.Thread(target=run_in_thread, daemon=True)
+    thread.start()
+
+# ==========================================
 # 初始化业务逻辑层（全局单例）
 # ==========================================
 
 game_logic = None  # 延迟初始化，在log_action定义后
 
-# ==========================================
 # 工具函数：在eventlet中运行async函数
 # ==========================================
 
@@ -62,16 +167,14 @@ def run_async_in_greenlet(coro):
     import asyncio
 
     def wrapper():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(coro)
+            # 使用 asyncio.run() 而不是手动管理 event loop
+            # asyncio.run() 会自动创建、运行、清理 event loop
+            return asyncio.run(coro)
         except Exception as e:
             print(f"[AsyncRunner] 错误: {e}")
             import traceback
             traceback.print_exc()
-        finally:
-            loop.close()
 
     socketio.start_background_task(wrapper)
 
@@ -871,6 +974,31 @@ def handle_chat_message(data):
             # 异步触发AI分析和回复
             run_async_in_greenlet(ai_agent.on_chat_message(chat_data))
 
+# --- TTS 语音生成请求 ---
+@socketio.on('request_tts')
+def handle_tts_request(data):
+    """处理TTS语音生成请求 - 使用socketio后台任务"""
+    room = data['room']
+    text = data['text']
+    message_id = data.get('message_id', '')
+    sentence_index = data.get('sentence_index', 0)  # 句子索引
+    total_sentences = data.get('total_sentences', 1)  # 总句子数
+
+    if room not in rooms:
+        return
+
+    print(f"[TTS] 请求: 句子 #{sentence_index}/{total_sentences}: {text[:25]}...")
+
+    # 使用socketio后台任务处理TTS请求
+    submit_tts_request(
+        text=text,
+        room=room,
+        message_id=message_id,
+        sentence_index=sentence_index,
+        voice="zh-CN-XiaoxiaoNeural"
+    )
+
+
 # --- 用户断开连接处理 ---
 @socketio.on('disconnect')
 def on_disconnect():
@@ -907,5 +1035,8 @@ def on_disconnect():
 
 if __name__ == '__main__':
     print("启动服务器: http://0.0.0.0:5001")
+    # 启动TTS发送循环（在greenlet中运行）
+    socketio.start_background_task(_tts_sender_loop)
+    print("[TTS] 发送循环已启动")
     # 将 5000 改为 5001
     socketio.run(app, debug=True, use_reloader=False, allow_unsafe_werkzeug=True, host='0.0.0.0', port=5001)

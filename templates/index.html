@@ -238,7 +238,17 @@
     <!-- 顶部栏 -->
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="m-0">✈️ C172 TEM 训练器 V2 <span class="badge bg-secondary" id="phase-badge">Wait</span></h4>
-        <span class="badge bg-warning text-dark">Score: <span id="score">0</span></span>
+        <div class="d-flex align-items-center gap-3">
+            <!-- 语音开关 -->
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="voice-toggle" onchange="toggleVoice()">
+                <label class="form-check-label text-white" for="voice-toggle">
+                    🔊 语音播报
+                </label>
+            </div>
+            <!-- 分数显示 -->
+            <span class="badge bg-warning text-dark">Score: <span id="score">0</span></span>
+        </div>
     </div>
 
     <!-- 登录 -->
@@ -497,8 +507,201 @@
     let currentThreatKeyword = "";
     let selectedOptionId = "";
 
+    // 语音播放相关变量
+    let voiceEnabled = false;  // 语音开关状态
+    let audioQueue = {};       // 音频播放队列 {messageId: {index: audio_base64}}
+    let isPlaying = false;     // 是否正在播放
+    let messageCounter = 0;    // 消息计数器，用于生成唯一ID
+    let currentPlayingMessage = null;  // 当前正在播放的消息ID
+    let currentPlayingIndex = 0;       // 当前正在播放的句子索引
+    let pendingAudioCount = {};        // 每条消息待接收的音频数量
+
     // 威胁关键词列表 (从后端 PHASE1_THREATS 同步)
     const THREAT_KEYWORDS = ["24015G25KT", "Landing_Light_U/S", "Recovering_from_Cold"];
+
+    // 语音开关切换
+    function toggleVoice() {
+        voiceEnabled = document.getElementById('voice-toggle').checked;
+        console.log(`语音播报: ${voiceEnabled ? '开启' : '关闭'}`);
+
+        if (voiceEnabled) {
+            log("🔊 语音播报已开启");
+        } else {
+            log("🔇 语音播报已关闭");
+        }
+    }
+
+    // 分割句子（中英文支持）
+    function splitSentences(text) {
+        // 使用正则分割句子，保留分隔符
+        const pattern = /([。！？.!?\n]+)/;
+        const parts = text.split(pattern);
+
+        // 重新组合句子
+        const sentences = [];
+        for (let i = 0; i < parts.length - 1; i += 2) {
+            if (i + 1 < parts.length) {
+                const sentence = (parts[i] + parts[i + 1]).trim();
+                if (sentence) sentences.push(sentence);
+            } else if (parts[i].trim()) {
+                sentences.push(parts[i].trim());
+            }
+        }
+
+        // 添加最后一个部分
+        if (parts.length % 2 === 1 && parts[parts.length - 1].trim()) {
+            sentences.push(parts[parts.length - 1].trim());
+        }
+
+        // 如果没有分割成功，返回原文本作为一个句子
+        if (sentences.length === 0 && text.trim()) {
+            sentences.push(text.trim());
+        }
+
+        return sentences;
+    }
+
+    // 请求TTS（流式处理：按句子并行请求）
+    function requestTTS(text, messageId) {
+        if (!voiceEnabled || !text || text.trim() === '') return;
+
+        // 清理特殊字符和emoji
+        let cleanText = text.replace(/[🔔✅❌⚠️⏳🔊🔇👥📚💬🤖👤🔥🛢️⚡❄️⚖️🌀🔋]/g, '').trim();
+        if (!cleanText) return;
+
+        // 分割成句子
+        const sentences = splitSentences(cleanText);
+        console.log(`[TTS] 分割为 ${sentences.length} 个句子`);
+
+        if (sentences.length === 0) return;
+
+        // 初始化该消息的音频存储
+        audioQueue[messageId] = {};
+        pendingAudioCount[messageId] = sentences.length;
+
+        // 并行请求每个句子的TTS
+        sentences.forEach((sentence, index) => {
+            console.log(`[TTS] 请求句子 #${index}: ${sentence.substring(0, 20)}...`);
+
+            socket.emit('request_tts', {
+                room: room,
+                text: sentence,
+                message_id: messageId,
+                sentence_index: index,
+                total_sentences: sentences.length
+            });
+        });
+
+        // 如果没有正在播放，开始播放这条消息
+        if (!isPlaying) {
+            currentPlayingMessage = messageId;
+            currentPlayingIndex = 0;
+            tryPlayNext();
+        }
+    }
+
+    // 接收TTS音频数据
+    socket.on('tts_audio', (data) => {
+        if (!voiceEnabled) return;
+
+        const messageId = data.message_id;
+        const sentenceIndex = data.sentence_index;
+
+        console.log(`[TTS] 收到音频: 消息=${messageId}, 句子=${sentenceIndex}`);
+
+        // 存储音频数据
+        if (!audioQueue[messageId]) {
+            audioQueue[messageId] = {};
+        }
+        audioQueue[messageId][sentenceIndex] = data.audio_base64;
+
+        // 减少待接收计数
+        if (pendingAudioCount[messageId]) {
+            pendingAudioCount[messageId]--;
+        }
+
+        // 尝试播放下一个
+        tryPlayNext();
+    });
+
+    // 尝试播放下一个音频
+    function tryPlayNext() {
+        if (isPlaying) return;
+
+        // 检查当前消息的当前句子是否已准备好
+        if (currentPlayingMessage &&
+            audioQueue[currentPlayingMessage] &&
+            audioQueue[currentPlayingMessage][currentPlayingIndex] !== undefined) {
+
+            playAudio(
+                audioQueue[currentPlayingMessage][currentPlayingIndex],
+                currentPlayingMessage,
+                currentPlayingIndex
+            );
+        }
+    }
+
+    // 播放音频
+    function playAudio(audioBase64, messageId, sentenceIndex) {
+        isPlaying = true;
+
+        console.log(`[TTS] 播放: 消息=${messageId}, 句子=${sentenceIndex}`);
+
+        // 创建音频元素
+        const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
+
+        audio.onended = () => {
+            console.log(`[TTS] 播放完成: 句子=${sentenceIndex}`);
+            isPlaying = false;
+
+            // 删除已播放的音频数据
+            if (audioQueue[messageId]) {
+                delete audioQueue[messageId][sentenceIndex];
+            }
+
+            // 移动到下一个句子
+            currentPlayingIndex++;
+
+            // 检查是否还有更多句子
+            if (audioQueue[messageId] && Object.keys(audioQueue[messageId]).length > 0) {
+                // 继续播放当前消息的下一个句子
+                tryPlayNext();
+            } else {
+                // 当前消息播放完成，检查是否有新消息
+                delete audioQueue[messageId];
+                delete pendingAudioCount[messageId];
+
+                // 查找下一条待播放的消息
+                const nextMessageId = Object.keys(audioQueue).find(id =>
+                    Object.keys(audioQueue[id]).length > 0
+                );
+
+                if (nextMessageId) {
+                    currentPlayingMessage = nextMessageId;
+                    currentPlayingIndex = 0;
+                    tryPlayNext();
+                } else {
+                    currentPlayingMessage = null;
+                    currentPlayingIndex = 0;
+                }
+            }
+        };
+
+        audio.onerror = (e) => {
+            console.error('[TTS] 音频播放错误:', e);
+            isPlaying = false;
+            currentPlayingIndex++;
+            tryPlayNext();
+        };
+
+        // 开始播放
+        audio.play().catch(e => {
+            console.error('[TTS] 无法播放音频:', e);
+            isPlaying = false;
+            currentPlayingIndex++;
+            tryPlayNext();
+        });
+    }
 
     // 1. 登录
     function join() {
@@ -945,15 +1148,19 @@
     }
 
     // 添加聊天消息
-    function addChatMessage(sender, role, message, timestamp) {
+    function addChatMessage(sender, role, message, timestamp, enableTTS = false) {
         const chatBox = document.getElementById('chat-messages');
         const msgDiv = document.createElement('div');
+
+        // 生成唯一消息ID
+        const messageId = `msg_${messageCounter++}`;
 
         // 判断消息类型
         const isMyMessage = role === myRole;
         const messageClass = isMyMessage ? `msg-${role.toLowerCase()}` : `msg-${role.toLowerCase()}`;
 
         msgDiv.className = `chat-message ${messageClass}`;
+        msgDiv.id = messageId;
 
         const time = new Date(timestamp).toLocaleTimeString('zh-CN', {
             hour: '2-digit',
@@ -968,6 +1175,11 @@
 
         chatBox.appendChild(msgDiv);
         chatBox.scrollTop = chatBox.scrollHeight;
+
+        // 如果是AI消息且启用了TTS，请求语音
+        if (enableTTS) {
+            requestTTS(message, messageId);
+        }
     }
 
     // 发送聊天消息
@@ -989,7 +1201,9 @@
 
     // 监听聊天消息
     socket.on('chat_message', (data) => {
-        addChatMessage(data.username, data.role, data.message, data.timestamp);
+        // 检查是否应该启用TTS（AI消息且有enable_tts标志）
+        const enableTTS = data.enable_tts === true;
+        addChatMessage(data.username, data.role, data.message, data.timestamp, enableTTS);
     });
 
     // 支持回车发送

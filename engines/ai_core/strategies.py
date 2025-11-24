@@ -130,7 +130,148 @@ PF提出的方案: {pf_decision_data['pf_decision']}
                 explanation="方案分析完成，同意执行"
             )
 
+    async def strategize_pf_decision(self, observation: Observation, threat_data: Dict) -> Strategy:
+        """
+        PF决策威胁应对方案的策略思考
+
+        Args:
+            observation: 当前观察结果
+            threat_data: 威胁详细数据（包含选项列表）
+
+        Returns:
+            Strategy: 策略建议（包含推荐选项ID）
+        """
+        print(f"[SlowEngine] PF决策策略思考...")
+
+        # 提取威胁信息
+        keyword = threat_data.get('keyword', 'Unknown')
+        description = threat_data.get('description', '')
+        options = threat_data.get('options', [])
+        sop_data = threat_data.get('sop_data', {})
+
+        # 从实际数据中提取选项ID列表（关键修复）
+        actual_option_ids = [opt['id'] for opt in options]
+        option_ids_hint = " / ".join(actual_option_ids)
+
+        # 构建选项文本
+        options_text = "\n".join([
+            f"{opt['id']}: {opt['text']}"
+            for opt in options
+        ])
+
+        # 提取SOP参考
+        sop_text = ""
+        if sop_data:
+            sop_text = f"{sop_data.get('title', '')}\n"
+            sop_text += "\n".join(sop_data.get('content', []))
+
+        # 提取聊天历史
+        chat_history = observation.context.get('chat_history', [])
+        chat_context = ""
+        if chat_history:
+            chat_lines = []
+            for msg in chat_history[-5:]:  # 最近5条
+                chat_lines.append(f"{msg['sender']}: {msg['message']}")
+            chat_context = "\n".join(chat_lines)
+
+        prompt = f"""你是经验丰富的PF，面对威胁需要做出决策。
+
+【威胁识别】
+威胁关键词: {keyword}
+威胁描述: {description}
+
+【可选方案】
+{options_text}
+
+【SOP参考】
+{sop_text if sop_text else "(无具体SOP参考)"}
+
+【机组通信记录】
+{chat_context if chat_context else "(暂无通信记录)"}
+
+【你的任务】
+深度分析每个应对方案，选择最合适的选项。
+
+【分析框架】
+1. **安全性**: 哪个方案最安全？
+2. **SOP合规性**: 哪个方案符合标准操作程序？
+3. **执行可行性**: 哪个方案在当前情况下可行？
+4. **风险评估**: 每个方案的潜在风险是什么？
+
+【决策原则】
+✅ 优先选择符合SOP的积极应对方案
+✅ 避免选择"忽略威胁"或"不采取行动"的选项
+✅ 考虑当前环境和机组状态
+
+【重要】你必须从以下实际选项ID中选择一个：{option_ids_hint}
+
+返回JSON格式（必须严格遵守格式）：
+{{
+    "thinking": "详细分析每个选项的优劣",
+    "assessment": {{
+        "threat_severity": "high/medium/low",
+        "time_pressure": "urgent/moderate/low",
+        "best_option_id": "推荐的选项ID（从 {option_ids_hint} 中选择）"
+    }},
+    "recommendation": {{
+        "action": "推荐的选项ID（从 {option_ids_hint} 中精确选择，不要自己编造）",
+        "confidence": "high/medium/low",
+        "reasoning": "选择该方案的理由"
+    }},
+    "next_focus": "执行该方案后需要关注的事项",
+    "explanation": "向机组成员简短解释你的决策（20-50字，口语化）"
+}}
+"""
+
+        await asyncio.sleep(random_delay(*self.slow_thinking_time))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+            analysis = parse_json_response(response)
+
+            # 构建 Strategy 对象
+            strategy = Strategy(
+                thinking=analysis.get('thinking', ''),
+                assessment=analysis.get('assessment', {}),
+                recommendation=analysis.get('recommendation', {}),
+                next_focus=analysis.get('next_focus', ''),
+                explanation=analysis.get('explanation', '')
+            )
+
+            recommended_option = strategy.recommendation.get('action', '')
+
+            # 验证返回的选项ID是否有效
+            if recommended_option not in actual_option_ids:
+                print(f"[SlowEngine] 警告: LLM返回的选项ID '{recommended_option}' 不在有效列表中 {actual_option_ids}")
+                # 降级处理：选择第一个选项
+                recommended_option = actual_option_ids[0]
+                strategy.recommendation['action'] = recommended_option
+                print(f"[SlowEngine] 降级为第一个选项: {recommended_option}")
+
+            print(f"[SlowEngine] 推荐方案: {recommended_option}")
+            print(f"[SlowEngine] 思考: {strategy.thinking[:50]}...")
+            print(f"[SlowEngine] 解释: {strategy.explanation}")
+
+            # 保存到上下文
+            self.strategic_context['pf_decision_strategy'] = strategy.to_dict()
+
+            return strategy
+
+        except Exception as e:
+            print(f"[SlowEngine] 错误: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # 返回默认策略（选择第一个选项）
+            default_option = options[0]['id'] if options else 'option_a'
+            return Strategy(
+                thinking="分析出错，采用默认策略",
+                assessment={"error": True},
+                recommendation={"action": default_option, "confidence": "low", "reasoning": "默认选择"},
+                next_focus="",
+                explanation="已做出决策，请PM验证"
+            )
+
     # TODO: 添加更多策略方法
-    # - strategize_pf_decision: PF决策策略
     # - strategize_qrh_selection: QRH选择策略
     # - strategize_gauge_monitoring: 仪表监控策略
