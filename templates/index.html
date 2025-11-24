@@ -117,6 +117,119 @@
         /* 角色标识 */
         .role-badge-pf { background-color: #d63384; }
         .role-badge-pm { background-color: #0dcaf0; color: #000; }
+
+        /* 聊天消息样式 */
+        .chat-message {
+            margin: 8px 0;
+            padding: 8px 12px;
+            border-radius: 12px;
+            max-width: 80%;
+            word-wrap: break-word;
+            font-size: 0.9em;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 系统消息 - 居中灰色 */
+        .msg-system {
+            background: #2a2a40;
+            color: #888;
+            text-align: center;
+            margin: 6px auto;
+            font-size: 0.85em;
+            max-width: 90%;
+            border-left: 3px solid #555;
+        }
+
+        /* PF消息 - 右侧粉红色 */
+        .msg-pf {
+            background: linear-gradient(135deg, #d63384, #c02570);
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        /* PM消息 - 左侧蓝色 */
+        .msg-pm {
+            background: linear-gradient(135deg, #0dcaf0, #0aa3c7);
+            color: #000;
+            margin-right: auto;
+            text-align: left;
+        }
+
+        .msg-sender {
+            font-weight: bold;
+            font-size: 0.75em;
+            opacity: 0.9;
+            display: block;
+            margin-bottom: 3px;
+        }
+
+        .msg-timestamp {
+            font-size: 0.7em;
+            opacity: 0.7;
+            margin-top: 3px;
+        }
+
+        /* 可折叠QRH库样式 */
+        .collapsible-panel {
+            border: 1px solid #444;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .collapsible-header {
+            background: linear-gradient(135deg, #3e3e5e, #2a2a40);
+            padding: 12px 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .collapsible-header:hover {
+            background: linear-gradient(135deg, #4e4e6e, #3a3a50);
+        }
+
+        .collapsible-header h6 {
+            margin: 0;
+            color: #0dcaf0;
+            font-size: 0.95em;
+        }
+
+        .collapsible-icon {
+            font-size: 1.2em;
+            transition: transform 0.3s ease;
+            color: #0dcaf0;
+        }
+
+        .collapsible-icon.expanded {
+            transform: rotate(180deg);
+        }
+
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease, padding 0.3s ease;
+            padding: 0 15px;
+        }
+
+        .collapsible-content.expanded {
+            max-height: 500px;
+            padding: 15px;
+        }
+
+        .qrh-button {
+            margin-bottom: 8px;
+        }
     </style>
 </head>
 <body>
@@ -290,17 +403,22 @@
                     </div>
                 </div>
 
-                <!-- QRH 库 (Phase 3) -->
-                <div class="panel">
-                    <h6>📚 QRH Library (决策)</h6>
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-outline-danger btn-sm text-start" onclick="selQRH('engine_fire')">🔥 ENGINE FIRE</button>
-                        <button class="btn btn-outline-warning btn-sm text-start" onclick="selQRH('low_oil_pressure')">🛢️ LOW OIL PRESSURE</button>
-                        <button class="btn btn-outline-info btn-sm text-start" onclick="selQRH('electrical_fire')">⚡ ELECTRICAL FIRE</button>
-                        <button class="btn btn-outline-primary btn-sm text-start" onclick="selQRH('carburetor_icing')">❄️ CARBURETOR ICING</button>
-                        <button class="btn btn-outline-success btn-sm text-start" onclick="selQRH('fuel_imbalance')">⚖️ FUEL IMBALANCE</button>
-                        <button class="btn btn-outline-secondary btn-sm text-start" onclick="selQRH('vacuum_failure')">🌀 VACUUM FAILURE</button>
-                        <button class="btn btn-outline-light btn-sm text-start" onclick="selQRH('alternator_failure')">🔋 ALTERNATOR FAILURE</button>
+                <!-- QRH 库 (Phase 3) - 可折叠 -->
+                <div class="collapsible-panel">
+                    <div class="collapsible-header" onclick="toggleQRHPanel()">
+                        <h6>📚 QRH Library (应急检查单)</h6>
+                        <span class="collapsible-icon" id="qrh-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content" id="qrh-content">
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-danger btn-sm text-start qrh-button" onclick="selQRH('engine_fire')">🔥 ENGINE FIRE</button>
+                            <button class="btn btn-outline-warning btn-sm text-start qrh-button" onclick="selQRH('low_oil_pressure')">🛢️ LOW OIL PRESSURE</button>
+                            <button class="btn btn-outline-info btn-sm text-start qrh-button" onclick="selQRH('electrical_fire')">⚡ ELECTRICAL FIRE</button>
+                            <button class="btn btn-outline-primary btn-sm text-start qrh-button" onclick="selQRH('carburetor_icing')">❄️ CARBURETOR ICING</button>
+                            <button class="btn btn-outline-success btn-sm text-start qrh-button" onclick="selQRH('fuel_imbalance')">⚖️ FUEL IMBALANCE</button>
+                            <button class="btn btn-outline-secondary btn-sm text-start qrh-button" onclick="selQRH('vacuum_failure')">🌀 VACUUM FAILURE</button>
+                            <button class="btn btn-outline-light btn-sm text-start qrh-button" onclick="selQRH('alternator_failure')">🔋 ALTERNATOR FAILURE</button>
+                        </div>
                     </div>
                 </div>
 
@@ -311,8 +429,17 @@
                     <div id="chk-list"></div>
                 </div>
 
-                <!-- 日志 -->
-                <div class="panel p-2 bg-dark" style="height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; color: #0f0;" id="log-box"></div>
+                <!-- 对话面板 -->
+                <div class="panel p-2" style="height: 400px; display: flex; flex-direction: column;">
+                    <h6 class="text-info mb-2">💬 机组通信</h6>
+                    <!-- 消息显示区域 -->
+                    <div id="chat-messages" style="flex: 1; overflow-y: auto; background: #1a1a2e; padding: 10px; border-radius: 4px; margin-bottom: 10px;"></div>
+                    <!-- 输入区域 -->
+                    <div style="display: flex; gap: 5px;">
+                        <input type="text" id="chat-input" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="输入消息..." style="flex: 1;">
+                        <button onclick="sendChatMessage()" class="btn btn-primary btn-sm">发送</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -804,10 +931,95 @@
     });
 
     function log(msg) {
-        const b = document.getElementById('log-box');
-        b.innerHTML += `<div>> ${msg}</div>`;
-        b.scrollTop = b.scrollHeight;
+        addSystemMessage(msg);
     }
+
+    // 添加系统消息
+    function addSystemMessage(msg) {
+        const chatBox = document.getElementById('chat-messages');
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'chat-message msg-system';
+        msgDiv.innerHTML = `<span>🔔 ${msg}</span>`;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // 添加聊天消息
+    function addChatMessage(sender, role, message, timestamp) {
+        const chatBox = document.getElementById('chat-messages');
+        const msgDiv = document.createElement('div');
+
+        // 判断消息类型
+        const isMyMessage = role === myRole;
+        const messageClass = isMyMessage ? `msg-${role.toLowerCase()}` : `msg-${role.toLowerCase()}`;
+
+        msgDiv.className = `chat-message ${messageClass}`;
+
+        const time = new Date(timestamp).toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        msgDiv.innerHTML = `
+            <span class="msg-sender">${sender} (${role})</span>
+            <div>${message}</div>
+            <span class="msg-timestamp">${time}</span>
+        `;
+
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // 发送聊天消息
+    function sendChatMessage() {
+        const input = document.getElementById('chat-input');
+        const message = input.value.trim();
+
+        if (!message) return;
+
+        // 发送到服务器
+        socket.emit('send_chat_message', {
+            room: room,
+            message: message
+        });
+
+        // 清空输入框
+        input.value = '';
+    }
+
+    // 监听聊天消息
+    socket.on('chat_message', (data) => {
+        addChatMessage(data.username, data.role, data.message, data.timestamp);
+    });
+
+    // 支持回车发送
+    document.addEventListener('DOMContentLoaded', () => {
+        const chatInput = document.getElementById('chat-input');
+        if (chatInput) {
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendChatMessage();
+                }
+            });
+        }
+    });
+
+    // QRH库折叠/展开控制
+    function toggleQRHPanel() {
+        const content = document.getElementById('qrh-content');
+        const icon = document.getElementById('qrh-icon');
+
+        if (content.classList.contains('expanded')) {
+            // 收起
+            content.classList.remove('expanded');
+            icon.classList.remove('expanded');
+        } else {
+            // 展开
+            content.classList.add('expanded');
+            icon.classList.add('expanded');
+        }
+    }
+
 </script>
 </body>
 </html>

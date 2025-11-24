@@ -299,18 +299,12 @@ class DualProcessAIAgent:
         print(f"[DualProcessAI] PM 收到验证请求: {pf_decision_data['pf_decision']}")
         print(f"[新架构] 开始 观察→策略→动作→执行 流程")
 
-        # 步骤1: 观察（简化版，TODO: 传入完整room_state）
-        observation = Observation(
-            phase="phase1",
-            role=self.role,
-            context={
-                "action": "pm_verify",
-                "pf_decision": pf_decision_data
-            }
-        )
+        # 步骤1: 观察（从room_state提取信息）
+        room_state = self.game_logic.rooms.get(self.room, {})
+        observation = self.observer.observe(room_state)
         print(f"[观察层] Phase: {observation.phase}, Role: {observation.role}")
 
-        # 步骤2: Slow Engine 生成策略
+        # 步骤2: Slow Engine 生成策略（包含解释）
         strategy = await self.strategy_gen.strategize_pm_verify(observation, pf_decision_data)
         print(f"[策略层] 建议: {strategy.recommendation}")
 
@@ -329,6 +323,13 @@ class DualProcessAIAgent:
                 actor
             )
             print(f"[执行完成] PM验证: {'同意' if action.params['approve'] else '驳回'}")
+
+        # 步骤5: 发送解释消息（如果有）
+        if strategy.explanation:
+            print(f"[解释发送] {strategy.explanation}")
+            # 延迟一下再发送，让验证结果先显示
+            await asyncio.sleep(0.5)
+            self.game_logic.send_ai_message(self.room, strategy.explanation, actor)
 
     async def on_quiz_questions(self, questions: List[Dict]):
         """PM答题 - 顺序处理所有题目"""
@@ -430,3 +431,104 @@ class DualProcessAIAgent:
         for i in range(items_count):
             await asyncio.sleep(random_delay(1.5, 3))
             self.game_logic.check_item(self.room, i, actor)
+
+    # ==========================================
+    # 聊天消息响应（新增）
+    # ==========================================
+
+    async def on_chat_message(self, chat_data: Dict):
+        """
+        处理聊天消息 - 判断是否需要回复
+
+        Args:
+            chat_data: 聊天消息数据
+                - sender: 发送者名字
+                - role: 发送者角色
+                - message: 消息内容
+                - timestamp: 时间戳
+        """
+        sender = chat_data['sender']
+        sender_role = chat_data['role']
+        message = chat_data['message']
+
+        print(f"[DualProcessAI] 收到聊天消息: {sender} ({sender_role}): {message}")
+
+        # 获取聊天历史（最近5条）
+        chat_history = self.game_logic.get_chat_history(self.room, limit=5)
+
+        # 获取当前阶段信息
+        room_state = self.game_logic.rooms.get(self.room, {})
+        current_phase = room_state.get('current_phase', 'unknown')
+
+        # 构建上下文
+        history_text = ""
+        if len(chat_history) > 1:  # 至少有2条消息（包括刚发送的）
+            for msg in chat_history[:-1]:  # 排除最新这条
+                history_text += f"{msg['username']}: {msg['message']}\n"
+
+        # Fast Engine 快速判断是否需要回复
+        prompt = f"""你是一名{self.role}飞行员，正在与搭档进行飞行训练。
+
+【当前阶段】
+{current_phase}
+
+【最近对话】
+{history_text if history_text else "(这是第一条消息)"}
+
+【搭档刚才说】
+{sender} ({sender_role}): {message}
+
+【你的任务】
+快速判断是否需要回复这条消息。
+
+【需要回复的情况】
+✅ 对方在向你提问
+✅ 对方在寻求你的意见
+✅ 对方在讨论飞行决策
+✅ 对方在分享重要观察
+✅ 对方在表达担忧
+✅ 需要确认或回应的信息
+
+【不需要回复的情况】
+❌ 对方只是自言自语
+❌ 对方在陈述事实，不需要回应
+❌ 对方说的话不涉及你
+❌ 简单的确认消息（如"收到"、"好的"）
+
+返回JSON格式：
+{{
+    "should_reply": true/false,
+    "reply_message": "如果需要回复，写一句简短自然的回复（10-30字）；如果不需要回复，留空",
+    "reasoning": "简短说明为什么回复或不回复"
+}}
+"""
+
+        try:
+            # Fast Engine快速判断（1-2秒）
+            await asyncio.sleep(random_delay(1, 2))
+            response = await self.fast_engine.chat(prompt, stream=False)
+
+            # 解析响应
+            from .ai_core.utils import parse_json_response
+            result = parse_json_response(response)
+
+            should_reply = result.get('should_reply', False)
+            reply_message = result.get('reply_message', '').strip()
+            reasoning = result.get('reasoning', '')
+
+            print(f"[FastEngine] 回复判断: {should_reply}, 理由: {reasoning}")
+
+            if should_reply and reply_message:
+                print(f"[FastEngine] 准备回复: {reply_message}")
+
+                # 发送回复
+                from game_logic import Actor
+                actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+                self.game_logic.send_ai_message(self.room, reply_message, actor)
+            else:
+                print(f"[FastEngine] 不需要回复")
+
+        except Exception as e:
+            print(f"[FastEngine] 聊天响应错误: {e}")
+            import traceback
+            traceback.print_exc()

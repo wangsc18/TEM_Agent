@@ -42,7 +42,36 @@ class StateObserver:
         else:
             context = {"status": "waiting"}
 
+        # 添加聊天历史到上下文
+        context['chat_history'] = self._extract_chat_history(room_state)
+
         return Observation(phase=phase, role=self.role, context=context)
+
+    def _extract_chat_history(self, room_state: Dict, limit: int = 10) -> list:
+        """
+        提取最近的聊天历史
+
+        Args:
+            room_state: 房间状态
+            limit: 提取最近的消息数量
+
+        Returns:
+            list: 格式化的聊天历史
+        """
+        history = room_state.get('chat_history', [])
+        recent = history[-limit:] if len(history) > limit else history
+
+        # 格式化为简洁的文本形式，便于LLM理解
+        formatted = []
+        for msg in recent:
+            role_tag = "🤖" if msg.get('is_ai', False) else "👤"
+            formatted.append({
+                'sender': f"{role_tag} {msg['username']} ({msg['role']})",
+                'message': msg['message'],
+                'time': msg.get('timestamp', '')[:19]  # 截取时间部分
+            })
+
+        return formatted
 
     def _observe_phase1(self, room_state: Dict) -> Dict:
         """

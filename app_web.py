@@ -172,7 +172,9 @@ def on_join(data):
             "mode": "dual_player",  # "dual_player" or "single_player"
             "ai_enabled": False,     # 是否启用AI
             "ai_agent": None,        # DualProcessAIAgent 实例
-            "human_sid": None        # 单人模式下的人类session_id
+            "human_sid": None,       # 单人模式下的人类session_id
+            # 聊天历史
+            "chat_history": []       # 保存聊天消息历史，供AI分析使用
         }
 
         # 写入会话开始日志
@@ -540,7 +542,7 @@ def run_sim_loop(room):
         if elapsed_time >= duration:
             socketio.emit('sys_msg', {'msg': "场景模拟结束，进行训练总结..."}, room=room)
 
-            # 触发最终结算
+        # 触发最终结算
             final_score = rooms[room]['score']
             scenario_name = rooms[room]['current_scenario']['name']
             result = "Passed" if final_score > 40 else "Debrief Required"
@@ -811,6 +813,63 @@ def handle_check(data):
     # 调用统一业务逻辑层
     actor = Actor(username, user_role, is_ai=False, sid=request.sid)
     game_logic.check_item(room, idx, actor)
+
+# --- 聊天消息处理 ---
+@socketio.on('send_chat_message')
+def handle_chat_message(data):
+    """处理用户发送的聊天消息"""
+    room = data['room']
+    message = data['message']
+
+    if room not in rooms:
+        return
+
+    # 获取用户信息
+    user_info = rooms[room]['users'][request.sid]
+    username = user_info['username']
+    user_role = user_info['role']
+
+    # 创建消息记录
+    chat_record = {
+        'username': username,
+        'role': user_role,
+        'message': message,
+        'timestamp': datetime.now().isoformat(),
+        'is_ai': user_info.get('is_ai', False)
+    }
+
+    # 保存到聊天历史
+    rooms[room]['chat_history'].append(chat_record)
+    # 限制历史记录数量，避免内存过大
+    if len(rooms[room]['chat_history']) > 100:
+        rooms[room]['chat_history'] = rooms[room]['chat_history'][-100:]
+
+    # 记录聊天消息
+    log_action(room, username, user_role, "chat_message",
+               details={"message": message},
+               phase=rooms[room].get('current_phase', 'unknown'))
+
+    # 广播消息给房间内所有人（包括发送者）
+    socketio.emit('chat_message', {
+        'username': username,
+        'role': user_role,
+        'message': message,
+        'timestamp': chat_record['timestamp']
+    }, room=room)
+
+    # === AI触发：监听人类消息并判断是否需要回复 ===
+    if rooms[room]['ai_enabled'] and not user_info.get('is_ai', False):
+        ai_agent = rooms[room]['ai_agent']
+        if ai_agent:
+            # 创建聊天消息数据
+            chat_data = {
+                'sender': username,
+                'role': user_role,
+                'message': message,
+                'timestamp': chat_record['timestamp']
+            }
+            # 异步触发AI分析和回复
+            run_async_in_greenlet(ai_agent.on_chat_message(chat_data))
 
 # --- 用户断开连接处理 ---
 @socketio.on('disconnect')

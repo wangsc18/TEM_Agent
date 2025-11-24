@@ -38,19 +38,22 @@ class Strategy:
         assessment: 情况评估
         recommendation: 策略建议
         next_focus: 下一步关注点
+        explanation: 向用户解释决策的简短消息（可选，用于聊天显示）
     """
-    def __init__(self, thinking: str, assessment: Dict, recommendation: Dict, next_focus: str = ""):
+    def __init__(self, thinking: str, assessment: Dict, recommendation: Dict, next_focus: str = "", explanation: str = ""):
         self.thinking = thinking
         self.assessment = assessment
         self.recommendation = recommendation
         self.next_focus = next_focus
+        self.explanation = explanation
 
     def to_dict(self) -> Dict:
         return {
             "thinking": self.thinking,
             "assessment": self.assessment,
             "recommendation": self.recommendation,
-            "next_focus": self.next_focus
+            "next_focus": self.next_focus,
+            "explanation": self.explanation
         }
 
 

@@ -42,6 +42,15 @@ class StrategyGenerator:
 
         sop_text = "\n".join(pf_decision_data['sop_data']['content'])
 
+        # 提取聊天历史
+        chat_history = observation.context.get('chat_history', [])
+        chat_context = ""
+        if chat_history:
+            chat_lines = []
+            for msg in chat_history[-5:]:  # 只用最近5条消息
+                chat_lines.append(f"{msg['sender']}: {msg['message']}")
+            chat_context = "\n".join(chat_lines)
+
         prompt = f"""你是严谨的PM，需要深入分析PF的决策。
 
 【当前情况】
@@ -52,6 +61,9 @@ PF提出的方案: {pf_decision_data['pf_decision']}
 {pf_decision_data['sop_data']['title']}
 {sop_text}
 
+【机组通信记录】
+{chat_context if chat_context else "(暂无通信记录)"}
+
 【你的任务】
 评估"PF选择的应对方案是否合理"。注意：不是评估"是否应该继续飞行"，而是评估"PF的应对方案本身"。
 
@@ -59,6 +71,7 @@ PF提出的方案: {pf_decision_data['pf_decision']}
 1. PF是否识别出了威胁？
 2. PF选择的方案是"积极应对"还是"忽视威胁"？
 3. 该方案是否符合SOP？
+4. 综合机组通信内容进行判断
 
 【判断逻辑】
 ✅ 应该同意：PF选择"使用XX标准程序"、"执行XX检查单"、"咨询XX" → 说明在积极应对
@@ -77,7 +90,8 @@ PF提出的方案: {pf_decision_data['pf_decision']}
         "confidence": "high/medium/low",
         "reasoning": "推荐理由"
     }},
-    "next_focus": "下一步关注点"
+    "next_focus": "下一步关注点",
+    "explanation": "向机组成员解释你决策的简短消息（20-50字，口语化，像真正的PM说话）"
 }}
 """
 
@@ -92,11 +106,13 @@ PF提出的方案: {pf_decision_data['pf_decision']}
                 thinking=analysis.get('thinking', ''),
                 assessment=analysis.get('assessment', {}),
                 recommendation=analysis.get('recommendation', {}),
-                next_focus=analysis.get('next_focus', '')
+                next_focus=analysis.get('next_focus', ''),
+                explanation=analysis.get('explanation', '')
             )
 
             print(f"[SlowEngine] 策略建议: {strategy.recommendation.get('action', 'N/A')}")
             print(f"[SlowEngine] 思考: {strategy.thinking[:50]}...")
+            print(f"[SlowEngine] 解释: {strategy.explanation}")
 
             # 保存到上下文
             self.strategic_context['pm_verify_strategy'] = strategy.to_dict()
@@ -110,7 +126,8 @@ PF提出的方案: {pf_decision_data['pf_decision']}
                 thinking="分析出错，采用默认策略",
                 assessment={"error": True},
                 recommendation={"action": "approve", "confidence": "low", "reasoning": "默认同意"},
-                next_focus=""
+                next_focus="",
+                explanation="方案分析完成，同意执行"
             )
 
     # TODO: 添加更多策略方法

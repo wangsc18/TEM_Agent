@@ -43,6 +43,74 @@ class GameLogic:
         self.log_action = log_action_func
 
     # ==========================================
+    # 通用方法
+    # ==========================================
+
+    def send_ai_message(self, room: str, message: str, actor: Actor) -> bool:
+        """
+        AI发送聊天消息
+
+        Args:
+            room: 房间ID
+            message: 消息内容
+            actor: AI Actor信息
+
+        Returns:
+            bool: 是否发送成功
+        """
+        if room not in self.rooms:
+            return False
+
+        from datetime import datetime
+
+        # 创建消息记录
+        chat_record = {
+            'username': actor.username,
+            'role': actor.role,
+            'message': message,
+            'timestamp': datetime.now().isoformat(),
+            'is_ai': True
+        }
+
+        # 保存到聊天历史
+        self.rooms[room]['chat_history'].append(chat_record)
+        # 限制历史记录数量
+        if len(self.rooms[room]['chat_history']) > 100:
+            self.rooms[room]['chat_history'] = self.rooms[room]['chat_history'][-100:]
+
+        # 记录日志
+        self.log_action(room, actor.username, actor.role, "ai_chat_message",
+                       details={"message": message},
+                       phase=self.rooms[room].get('current_phase', 'unknown'))
+
+        # 广播消息给房间内所有人
+        self.socketio.emit('chat_message', {
+            'username': actor.username,
+            'role': actor.role,
+            'message': message,
+            'timestamp': chat_record['timestamp']
+        }, room=room)
+
+        return True
+
+    def get_chat_history(self, room: str, limit: int = 20) -> list:
+        """
+        获取聊天历史
+
+        Args:
+            room: 房间ID
+            limit: 返回最近的消息数量
+
+        Returns:
+            list: 聊天历史列表
+        """
+        if room not in self.rooms:
+            return []
+
+        history = self.rooms[room].get('chat_history', [])
+        return history[-limit:] if len(history) > limit else history
+
+    # ==========================================
     # Phase 1: 威胁识别与决策
     # ==========================================
 
