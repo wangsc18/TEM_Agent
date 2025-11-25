@@ -230,24 +230,66 @@
         .qrh-button {
             margin-bottom: 8px;
         }
+
+        .language-toggle {
+            position: fixed;
+            bottom: 15px;
+            left: 15px;
+            background: #2a2a40;
+            border: 1px solid #444;
+            border-radius: 999px;
+            padding: 6px 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 1200;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        .language-toggle label {
+            margin: 0;
+            font-size: 0.85em;
+        }
+
+        .language-toggle select {
+            background: #1e1e2f;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 999px;
+            padding: 2px 10px;
+            font-size: 0.85em;
+        }
     </style>
 </head>
 <body>
+<div class="language-toggle">
+    <label for="language-select" class="text-white small" data-i18n="language.toggle">Language</label>
+    <select id="language-select" onchange="handleLanguageChange(this.value)">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+    </select>
+</div>
 
 <div class="container py-3">
     <!-- 顶部栏 -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="m-0">✈️ C172 TEM 训练器 V2 <span class="badge bg-secondary" id="phase-badge">Wait</span></h4>
-        <div class="d-flex align-items-center gap-3">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h4 class="m-0" id="app-title" data-i18n="header.title">✈️ C172 TEM 训练器 V2</h4>
+            <span class="badge bg-secondary" id="phase-badge" data-i18n="phase.badge.wait">Wait</span>
+            <span class="badge bg-dark border border-secondary" id="room-badge" style="display:none;"></span>
+        </div>
+        <div class="d-flex align-items-center gap-3 flex-wrap justify-content-end">
             <!-- 语音开关 -->
             <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="voice-toggle" onchange="toggleVoice()">
-                <label class="form-check-label text-white" for="voice-toggle">
+                <label class="form-check-label text-white" for="voice-toggle" id="voice-toggle-label" data-i18n="voice.toggle">
                     🔊 语音播报
                 </label>
             </div>
             <!-- 分数显示 -->
-            <span class="badge bg-warning text-dark">Score: <span id="score">0</span></span>
+            <span class="badge bg-warning text-dark" id="score-badge">
+                <span id="score-label" data-i18n="score.label">Score</span>: <span id="score">0</span>
+            </span>
         </div>
     </div>
 
@@ -255,40 +297,40 @@
     <div id="login-panel" class="row justify-content-center mt-5">
         <div class="col-md-4">
             <div class="panel p-4 text-center">
-                <h3 class="mb-3">飞行准备</h3>
+                <h3 class="mb-3" data-i18n="login.title">飞行准备</h3>
 
                 <!-- 新增：训练模式选择 -->
                 <div class="mb-3 text-start">
-                    <label class="form-label text-muted small">训练模式 (Training Mode)</label>
+                    <label class="form-label text-muted small" data-i18n="login.mode.label">训练模式 (Training Mode)</label>
                     <select id="mode" class="form-select bg-dark text-white border-secondary">
-                        <option value="dual_player">🧑‍✈️🧑‍✈️ 双人协作模式 (2 Players)</option>
-                        <option value="single_player">🧑‍✈️🤖 单人+AI模式 (1 Player + AI Partner)</option>
+                        <option value="dual_player" data-i18n="login.mode.dual">🧑‍✈️🧑‍✈️ 双人协作模式 (2 Players)</option>
+                        <option value="single_player" data-i18n="login.mode.single">🧑‍✈️🤖 单人+AI模式 (1 Player + AI Partner)</option>
                     </select>
-                    <small class="text-muted" style="font-size: 0.7em">
+                    <small class="text-muted" style="font-size: 0.7em" data-i18n="login.mode.note">
                         单人模式：AI将扮演另一个角色与你协作训练
                     </small>
                 </div>
 
                 <div class="mb-3 text-start">
-                    <label class="form-label text-muted small">训练房间号 (Room ID)</label>
-                    <input id="room-id" class="form-control bg-dark text-white border-secondary" placeholder="例如: 8888">
-                    <small class="text-muted" style="font-size: 0.7em">和你的搭档输入相同的房间号</small>
+                    <label class="form-label text-muted small" data-i18n="login.room.label">训练房间号 (Room ID)</label>
+                    <input id="room-id" class="form-control bg-dark text-white border-secondary" placeholder="例如: 8888" data-i18n-placeholder="login.room.placeholder">
+                    <small class="text-muted" style="font-size: 0.7em" data-i18n="login.room.note">和你的搭档输入相同的房间号</small>
                 </div>
 
                 <div class="mb-3 text-start">
-                    <label class="form-label text-muted small">呼号 (Callsign)</label>
-                    <input id="username" class="form-control bg-dark text-white border-secondary" placeholder="例如: Pilot A">
+                    <label class="form-label text-muted small" data-i18n="login.username.label">呼号 (Callsign)</label>
+                    <input id="username" class="form-control bg-dark text-white border-secondary" placeholder="例如: Pilot A" data-i18n-placeholder="login.username.placeholder">
                 </div>
 
                 <div class="mb-3 text-start">
-                    <label class="form-label text-muted small">职责 (Role)</label>
+                    <label class="form-label text-muted small" data-i18n="login.role.label">职责 (Role)</label>
                     <select id="role" class="form-select bg-dark text-white border-secondary">
-                        <option value="PF">PF (操纵飞行员)</option>
-                        <option value="PM">PM (监控飞行员)</option>
+                        <option value="PF" data-i18n="login.role.pf">PF (操纵飞行员)</option>
+                        <option value="PM" data-i18n="login.role.pm">PM (监控飞行员)</option>
                     </select>
                 </div>
 
-                <button onclick="join()" class="btn btn-primary w-100">加入训练</button>
+                <button onclick="join()" class="btn btn-primary w-100" data-i18n="login.button">加入训练</button>
             </div>
         </div>
     </div>
@@ -303,10 +345,10 @@
                 <!-- Phase 1: 起飞前检查 -->
                 <div id="phase1-panel" class="panel">
                     <h5 class="text-info border-bottom pb-2">
-                        Phase 1: Pre-flight TEM (起飞前威胁管理)
+                        <span id="phase1-title" data-i18n="phase1.title">Phase 1: Pre-flight TEM (起飞前威胁管理)</span>
                         <span id="my-role-badge" class="badge float-end"></span>
                     </h5>
-                    <p class="small text-muted">
+                    <p class="small text-muted" data-i18n="phase1.instructions" data-i18n-mode="html">
                         <strong>PF</strong>: 点击文本中的威胁关键词（黄色高亮），选择应对方案<br>
                         <strong>PM</strong>: 查看 PF 方案，验证 SOP 限制，同意/驳回决策
                     </p>
@@ -314,64 +356,64 @@
 
                     <!-- 威胁处理状态 -->
                     <div id="threat-status-panel" class="mt-3" style="display:none;">
-                        <h6 class="text-success">✅ 已处理威胁</h6>
+                        <h6 class="text-success" data-i18n="phase1.threatStatus.title">✅ 已处理威胁</h6>
                         <div id="threat-status-list"></div>
                     </div>
 
                     <!-- 紧急预案测试 -->
                     <div id="quiz-container" class="quiz-container mt-4">
-                        <h5 class="text-warning border-bottom pb-2">📚 紧急预案知识测试 (PM 操作)</h5>
+                        <h5 class="text-warning border-bottom pb-2" data-i18n="phase1.quiz.title">📚 紧急预案知识测试 (PM 操作)</h5>
                         <div id="quiz-questions"></div>
                     </div>
 
-                    <button id="btn-start-quiz" onclick="startQuiz()" class="btn btn-warning w-100 mt-3" style="display:none;">
+                    <button id="btn-start-quiz" onclick="startQuiz()" class="btn btn-warning w-100 mt-3" style="display:none;" data-i18n="phase1.quiz.button">
                         开始紧急预案测试
                     </button>
-                    <button id="btn-next-phase" onclick="reqNext()" class="btn btn-success w-100 mt-3" style="display:none;">
+                    <button id="btn-next-phase" onclick="reqNext()" class="btn btn-success w-100 mt-3" style="display:none;" data-i18n="phase1.next.button">
                         检查完毕，准备起飞 (Cross-check)
                     </button>
                 </div>
 
                 <!-- Phase 2: 飞行监控 -->
                 <div id="phase2-panel" class="panel" style="display:none;">
-                    <h5 class="text-warning border-bottom pb-2">Phase 2: In-flight (空中巡航)</h5>
-                    <p class="small text-info">💡 点击仪表标记监控异常征兆，提前发现故障可获得额外分数！</p>
+                    <h5 class="text-warning border-bottom pb-2" id="phase2-title" data-i18n="phase2.title">Phase 2: In-flight (空中巡航)</h5>
+                    <p class="small text-info" id="phase2-tip" data-i18n="phase2.tip">💡 点击仪表标记监控异常征兆，提前发现故障可获得额外分数！</p>
 
                     <!-- 仪表盘 -->
                     <div class="gauge-row">
                         <div class="gauge" data-gauge-id="spd" onclick="monitorGauge('spd')">
-                            <div class="gauge-label">SPD</div>
+                            <div class="gauge-label" data-i18n="gauge.spd">SPD</div>
                             <div class="gauge-needle" id="nd-spd"></div>
                             <div class="gauge-center"></div>
                         </div>
                         <div class="gauge" data-gauge-id="alt" onclick="monitorGauge('alt')">
-                            <div class="gauge-label">ALT</div>
+                            <div class="gauge-label" data-i18n="gauge.alt">ALT</div>
                             <div class="gauge-needle" id="nd-alt"></div>
                             <div class="gauge-center"></div>
                         </div>
                         <div class="gauge" data-gauge-id="oil_p" onclick="monitorGauge('oil_p')">
                             <div class="oil-green"></div>
-                            <div class="gauge-label">OIL P</div>
+                            <div class="gauge-label" data-i18n="gauge.oil">OIL P</div>
                             <div class="gauge-needle" id="nd-oil"></div>
                             <div class="gauge-center"></div>
                         </div>
                         <div class="gauge" data-gauge-id="rpm" onclick="monitorGauge('rpm')">
-                            <div class="gauge-label">RPM</div>
+                            <div class="gauge-label" data-i18n="gauge.rpm">RPM</div>
                             <div class="gauge-needle" id="nd-rpm"></div>
                             <div class="gauge-center"></div>
                         </div>
                         <div class="gauge" data-gauge-id="fuel_qty" onclick="monitorGauge('fuel_qty')">
-                            <div class="gauge-label">FUEL</div>
+                            <div class="gauge-label" data-i18n="gauge.fuel">FUEL</div>
                             <div class="gauge-needle" id="nd-fuel"></div>
                             <div class="gauge-center"></div>
                         </div>
                         <div class="gauge" data-gauge-id="vacuum" onclick="monitorGauge('vacuum')">
-                            <div class="gauge-label">VAC</div>
+                            <div class="gauge-label" data-i18n="gauge.vac">VAC</div>
                             <div class="gauge-needle" id="nd-vacuum"></div>
                             <div class="gauge-center"></div>
                         </div>
                         <div class="gauge" data-gauge-id="ammeter" onclick="monitorGauge('ammeter')">
-                            <div class="gauge-label">AMPS</div>
+                            <div class="gauge-label" data-i18n="gauge.amps">AMPS</div>
                             <div class="gauge-needle" id="nd-ammeter"></div>
                             <div class="gauge-center"></div>
                         </div>
@@ -384,7 +426,7 @@
                         <div class="route-text" style="right: 10px;">CYYC</div>
                         <div id="plane-icon">✈️</div>
                     </div>
-                    <p class="text-center small text-muted mt-1">Visualized Flight Progress</p>
+                    <p class="text-center small text-muted mt-1" id="route-legend" data-i18n="route.legend">Visualized Flight Progress</p>
                 </div>
 
             </div>
@@ -392,42 +434,42 @@
             <!-- 右侧：辅助区 -->
             <div class="col-md-4">
                 <!-- 告警 -->
-                <div id="alert-box" class="alert alert-dark text-center mb-3">SYSTEM NORMAL</div>
+                <div id="alert-box" class="alert alert-dark text-center mb-3" data-i18n="alerts.normal">SYSTEM NORMAL</div>
 
                 <!-- PM 验证面板 (仅 PM 可见) -->
                 <div id="pm-verify-panel" class="panel border-info" style="display:none;">
-                    <h6 class="text-info">🔍 PM 验证决策</h6>
+                    <h6 class="text-info" id="pm-panel-title" data-i18n="pm.panel.title">🔍 PM 验证决策</h6>
                     <div class="small mb-2">
-                        <strong>PF 方案：</strong><br>
+                        <strong id="pm-plan-label" data-i18n="pm.panel.planLabel">PF 方案：</strong><br>
                         <span id="pm-pf-decision" class="text-warning"></span>
                     </div>
 
                     <div class="sop-panel" id="pm-sop-display">
-                        <h6 id="pm-sop-title">SOP 参考</h6>
+                        <h6 id="pm-sop-title" data-i18n="pm.panel.sopTitle">SOP 参考</h6>
                         <ul id="pm-sop-content"></ul>
                     </div>
 
                     <div class="d-grid gap-2 mt-3">
-                        <button class="btn btn-success" onclick="pmVerify(true)">✅ 同意方案</button>
-                        <button class="btn btn-danger" onclick="pmVerify(false)">❌ 驳回方案</button>
+                        <button class="btn btn-success" onclick="pmVerify(true)" id="pm-approve-btn" data-i18n="pm.panel.approve">✅ 同意方案</button>
+                        <button class="btn btn-danger" onclick="pmVerify(false)" id="pm-reject-btn" data-i18n="pm.panel.reject">❌ 驳回方案</button>
                     </div>
                 </div>
 
                 <!-- QRH 库 (Phase 3) - 可折叠 -->
                 <div class="collapsible-panel">
                     <div class="collapsible-header" onclick="toggleQRHPanel()">
-                        <h6>📚 QRH Library (应急检查单)</h6>
+                        <h6 id="qrh-header" data-i18n="qrh.header">📚 QRH Library (应急检查单)</h6>
                         <span class="collapsible-icon" id="qrh-icon">▼</span>
                     </div>
                     <div class="collapsible-content" id="qrh-content">
                         <div class="d-grid gap-2">
-                            <button class="btn btn-outline-danger btn-sm text-start qrh-button" onclick="selQRH('engine_fire')">🔥 ENGINE FIRE</button>
-                            <button class="btn btn-outline-warning btn-sm text-start qrh-button" onclick="selQRH('low_oil_pressure')">🛢️ LOW OIL PRESSURE</button>
-                            <button class="btn btn-outline-info btn-sm text-start qrh-button" onclick="selQRH('electrical_fire')">⚡ ELECTRICAL FIRE</button>
-                            <button class="btn btn-outline-primary btn-sm text-start qrh-button" onclick="selQRH('carburetor_icing')">❄️ CARBURETOR ICING</button>
-                            <button class="btn btn-outline-success btn-sm text-start qrh-button" onclick="selQRH('fuel_imbalance')">⚖️ FUEL IMBALANCE</button>
-                            <button class="btn btn-outline-secondary btn-sm text-start qrh-button" onclick="selQRH('vacuum_failure')">🌀 VACUUM FAILURE</button>
-                            <button class="btn btn-outline-light btn-sm text-start qrh-button" onclick="selQRH('alternator_failure')">🔋 ALTERNATOR FAILURE</button>
+                            <button class="btn btn-outline-danger btn-sm text-start qrh-button" onclick="selQRH('engine_fire')" data-i18n="qrh.engine_fire">🔥 ENGINE FIRE</button>
+                            <button class="btn btn-outline-warning btn-sm text-start qrh-button" onclick="selQRH('low_oil_pressure')" data-i18n="qrh.low_oil_pressure">🛢️ LOW OIL PRESSURE</button>
+                            <button class="btn btn-outline-info btn-sm text-start qrh-button" onclick="selQRH('electrical_fire')" data-i18n="qrh.electrical_fire">⚡ ELECTRICAL FIRE</button>
+                            <button class="btn btn-outline-primary btn-sm text-start qrh-button" onclick="selQRH('carburetor_icing')" data-i18n="qrh.carburetor_icing">❄️ CARBURETOR ICING</button>
+                            <button class="btn btn-outline-success btn-sm text-start qrh-button" onclick="selQRH('fuel_imbalance')" data-i18n="qrh.fuel_imbalance">⚖️ FUEL IMBALANCE</button>
+                            <button class="btn btn-outline-secondary btn-sm text-start qrh-button" onclick="selQRH('vacuum_failure')" data-i18n="qrh.vacuum_failure">🌀 VACUUM FAILURE</button>
+                            <button class="btn btn-outline-light btn-sm text-start qrh-button" onclick="selQRH('alternator_failure')" data-i18n="qrh.alternator_failure">🔋 ALTERNATOR FAILURE</button>
                         </div>
                     </div>
                 </div>
@@ -441,13 +483,13 @@
 
                 <!-- 对话面板 -->
                 <div class="panel p-2" style="height: 400px; display: flex; flex-direction: column;">
-                    <h6 class="text-info mb-2">💬 机组通信</h6>
+                    <h6 class="text-info mb-2" data-i18n="chat.title">💬 机组通信</h6>
                     <!-- 消息显示区域 -->
                     <div id="chat-messages" style="flex: 1; overflow-y: auto; background: #1a1a2e; padding: 10px; border-radius: 4px; margin-bottom: 10px;"></div>
                     <!-- 输入区域 -->
                     <div style="display: flex; gap: 5px;">
-                        <input type="text" id="chat-input" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="输入消息..." style="flex: 1;">
-                        <button onclick="sendChatMessage()" class="btn btn-primary btn-sm">发送</button>
+                        <input type="text" id="chat-input" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="输入消息..." style="flex: 1;" data-i18n-placeholder="chat.placeholder">
+                        <button onclick="sendChatMessage()" class="btn btn-primary btn-sm" id="chat-send-btn" data-i18n="chat.send">发送</button>
                     </div>
                 </div>
             </div>
@@ -460,22 +502,22 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content modal-dark">
             <div class="modal-header">
-                <h5 class="modal-title">
+                <h5 class="modal-title" id="pf-modal-title" data-i18n="pf.modal.title" data-i18n-mode="html">
                     <span class="badge bg-danger">PF</span> 威胁决策
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-warning">
-                    <strong>威胁：</strong> <span id="pf-threat-keyword"></span><br>
+                    <strong id="pf-threat-label" data-i18n="pf.modal.threat">威胁：</strong> <span id="pf-threat-keyword"></span><br>
                     <span id="pf-threat-desc"></span>
                 </div>
-                <h6 class="text-info">选择应对方案：</h6>
+                <h6 class="text-info" id="pf-options-title" data-i18n="pf.modal.options">选择应对方案：</h6>
                 <div id="pf-options-list"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="pf-submit-btn" onclick="submitPFDecision()">提交方案</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="pf-cancel-btn" data-i18n="pf.modal.cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="pf-submit-btn" onclick="submitPFDecision()" data-i18n="pf.modal.submit">提交方案</button>
             </div>
         </div>
     </div>
@@ -485,14 +527,14 @@
 <div class="modal fade" id="endModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content modal-dark">
-            <div class="modal-header"><h5 class="modal-title">训练报告</h5></div>
+            <div class="modal-header"><h5 class="modal-title" id="end-modal-title" data-i18n="end.modal.title">训练报告</h5></div>
             <div class="modal-body text-center">
                 <h1 class="text-success display-3" id="end-score">0</h1>
                 <h4 id="end-res">Passed</h4>
                 <p class="text-muted" id="end-sum">...</p>
             </div>
             <div class="modal-footer">
-                <button onclick="location.reload()" class="btn btn-primary">End Session</button>
+                <button onclick="location.reload()" class="btn btn-primary" id="end-modal-button" data-i18n="end.modal.button">End Session</button>
             </div>
         </div>
     </div>
@@ -506,6 +548,503 @@
     let pfDecisionModal;
     let currentThreatKeyword = "";
     let selectedOptionId = "";
+
+    const LANGUAGE_STORAGE_KEY = 'tem_app_lang';
+    const translations = {
+        zh: {
+            'language.toggle': '语言',
+            'page.title': 'C172 TEM 训练器 V2 - 角色分工版',
+            'header.title': '✈️ C172 TEM 训练器 V2',
+            'header.room_badge': '房间: {room}',
+            'phase.badge.wait': '待命',
+            'phase.badge.phase1': 'Phase 1',
+            'phase.badge.phase2': 'Phase 2: In-flight',
+            'voice.toggle': '🔊 语音播报',
+            'score.label': '得分',
+            'login.title': '飞行准备',
+            'login.mode.label': '训练模式',
+            'login.mode.dual': '🧑‍✈️🧑‍✈️ 双人协作模式 (2 人)',
+            'login.mode.single': '🧑‍✈️🤖 单人 + AI 模式',
+            'login.mode.note': '单人模式：AI 将扮演另一个角色与你协作训练',
+            'login.room.label': '训练房间号',
+            'login.room.placeholder': '例如: 8888',
+            'login.room.note': '和你的搭档输入相同的房间号',
+            'login.username.label': '呼号',
+            'login.username.placeholder': '例如: Pilot A',
+            'login.role.label': '职责',
+            'login.role.pf': 'PF (操纵飞行员)',
+            'login.role.pm': 'PM (监控飞行员)',
+            'login.button': '加入训练',
+            'phase1.title': 'Phase 1: 起飞前 TEM (威胁管理)',
+            'phase1.instructions': '<strong>PF</strong>: 点击文本中的威胁关键词，选择应对方案<br><strong>PM</strong>: 审核 PF 方案，验证 SOP 限制并做出决策',
+            'phase1.threatStatus.title': '✅ 已处理威胁',
+            'phase1.quiz.title': '📚 紧急预案知识测试 (PM 操作)',
+            'phase1.quiz.button': '开始紧急预案测试',
+            'phase1.next.button': '检查完毕，准备起飞 (Cross-check)',
+            'phase1.next.waiting': '等待对方确认...',
+            'phase2.title': 'Phase 2: In-flight (空中巡航)',
+            'phase2.tip': '💡 点击仪表标记监控异常征兆，提前发现故障可获得额外分数！',
+            'route.legend': '航迹进度',
+            'gauge.spd': '空速',
+            'gauge.alt': '高度',
+            'gauge.oil': '机油压力',
+            'gauge.rpm': '转速',
+            'gauge.fuel': '燃油',
+            'gauge.vac': '真空',
+            'gauge.amps': '电流',
+            'alerts.normal': 'SYSTEM NORMAL',
+            'alerts.monitoring': 'MONITORING...',
+            'pm.panel.title': '🔍 PM 验证决策',
+            'pm.panel.planLabel': 'PF 方案：',
+            'pm.panel.sopTitle': 'SOP 参考',
+            'pm.panel.approve': '✅ 同意方案',
+            'pm.panel.reject': '❌ 驳回方案',
+            'qrh.header': '📚 QRH 库 (应急检查单)',
+            'qrh.engine_fire': '🔥 发动机起火',
+            'qrh.low_oil_pressure': '🛢️ 机油压力过低',
+            'qrh.electrical_fire': '⚡ 电气火灾',
+            'qrh.carburetor_icing': '❄️ 化油器结冰',
+            'qrh.fuel_imbalance': '⚖️ 燃油不平衡',
+            'qrh.vacuum_failure': '🌀 真空系统故障',
+            'qrh.alternator_failure': '🔋 发电机故障',
+            'chat.title': '💬 机组通信',
+            'chat.placeholder': '输入消息...',
+            'chat.send': '发送',
+            'quiz.questionLabel': '问题 {number}:',
+            'quiz.correct': '✅ 正确',
+            'quiz.incorrect': '❌ 错误',
+            'pf.modal.title': '<span class="badge bg-danger">PF</span> 威胁决策',
+            'pf.modal.threat': '威胁：',
+            'pf.modal.options': '选择应对方案：',
+            'pf.modal.cancel': '取消',
+            'pf.modal.submit': '提交方案',
+            'end.modal.title': '训练报告',
+            'end.modal.button': '结束会话',
+            'alerts.enter_callsign': '请输入您的呼号',
+            'alerts.enter_room': '请输入房间号 (例如: 101)',
+            'alerts.pf_only': '只有 PF 可以识别威胁',
+            'alerts.select_option': '请选择一个应对方案',
+            'alerts.partner_left': '⚠️ 搭档 {username} 已离开，训练暂停。请等待其他人加入或刷新页面重新开始。',
+            'tooltips.clickThreat': '点击识别威胁',
+            'log.voice_on': '🔊 语音播报已开启',
+            'log.voice_off': '🔇 语音播报已关闭',
+            'log.phase1.start': '起飞前阶段开始。PF：识别威胁；PM：监控并验证。',
+            'log.pm.verify': '🔍 PM: 验证 PF 的方案 "{decision}"',
+            'log.threats.complete': '✅ 所有威胁已处理，可以开始紧急预案测试',
+            'log.quiz.start': '📚 紧急预案测试开始 (PM 操作)',
+            'log.quiz.complete': '✅ 测试完成，可以进入 Phase 2',
+            'log.phase2.start': '起飞！开始监控仪表...',
+            'log.check_item': '{role} 已勾选第 {index} 项',
+            'log.user_count': '👥 房间人数: {count}/2 - {users}',
+            'log.user_left': '⚠️ {username} ({role}) 离开了训练 - 剩余人数: {remaining}/2'
+        },
+        en: {
+            'language.toggle': 'Language',
+            'page.title': 'C172 TEM Trainer V2 - Crew Mode',
+            'header.title': '✈️ C172 TEM Trainer V2',
+            'header.room_badge': 'Room: {room}',
+            'phase.badge.wait': 'Standby',
+            'phase.badge.phase1': 'Phase 1',
+            'phase.badge.phase2': 'Phase 2: In-flight',
+            'voice.toggle': '🔊 Voice Output',
+            'score.label': 'Score',
+            'login.title': 'Flight Preparation',
+            'login.mode.label': 'Training Mode',
+            'login.mode.dual': '🧑‍✈️🧑‍✈️ Two-player Crew Mode',
+            'login.mode.single': '🧑‍✈️🤖 Single + AI Partner',
+            'login.mode.note': 'Single mode: the AI will act as your crewmate.',
+            'login.room.label': 'Room ID',
+            'login.room.placeholder': 'e.g., 8888',
+            'login.room.note': 'Enter the same room ID as your partner.',
+            'login.username.label': 'Callsign',
+            'login.username.placeholder': 'e.g., Pilot A',
+            'login.role.label': 'Role',
+            'login.role.pf': 'PF (Pilot Flying)',
+            'login.role.pm': 'PM (Pilot Monitoring)',
+            'login.button': 'Join Session',
+            'phase1.title': 'Phase 1: Pre-flight TEM (Threat Management)',
+            'phase1.instructions': '<strong>PF</strong>: Click threat keywords in the text and propose mitigations.<br><strong>PM</strong>: Review PF plans, validate SOP limits, and approve/deny.',
+            'phase1.threatStatus.title': '✅ Processed Threats',
+            'phase1.quiz.title': '📚 Emergency Memory-Item Quiz (PM only)',
+            'phase1.quiz.button': 'Start Emergency Quiz',
+            'phase1.next.button': 'Check complete, ready for takeoff (Cross-check)',
+            'phase1.next.waiting': 'Waiting for partner confirmation...',
+            'phase2.title': 'Phase 2: In-flight (Cruise Monitoring)',
+            'phase2.tip': '💡 Click an instrument to tag abnormal precursors and earn bonus points.',
+            'route.legend': 'Visualized Flight Progress',
+            'gauge.spd': 'SPD',
+            'gauge.alt': 'ALT',
+            'gauge.oil': 'OIL P',
+            'gauge.rpm': 'RPM',
+            'gauge.fuel': 'FUEL',
+            'gauge.vac': 'VAC',
+            'gauge.amps': 'AMPS',
+            'alerts.normal': 'SYSTEM NORMAL',
+            'alerts.monitoring': 'MONITORING...',
+            'pm.panel.title': '🔍 PM Decision Review',
+            'pm.panel.planLabel': 'PF Plan:',
+            'pm.panel.sopTitle': 'SOP Reference',
+            'pm.panel.approve': '✅ Approve Plan',
+            'pm.panel.reject': '❌ Reject Plan',
+            'qrh.header': '📚 QRH Library (Emergency Checklists)',
+            'qrh.engine_fire': '🔥 Engine Fire',
+            'qrh.low_oil_pressure': '🛢️ Low Oil Pressure',
+            'qrh.electrical_fire': '⚡ Electrical Fire',
+            'qrh.carburetor_icing': '❄️ Carburetor Icing',
+            'qrh.fuel_imbalance': '⚖️ Fuel Imbalance',
+            'qrh.vacuum_failure': '🌀 Vacuum Failure',
+            'qrh.alternator_failure': '🔋 Alternator Failure',
+            'chat.title': '💬 Crew Communication',
+            'chat.placeholder': 'Type a message...',
+            'chat.send': 'Send',
+            'quiz.questionLabel': 'Question {number}:',
+            'quiz.correct': '✅ Correct',
+            'quiz.incorrect': '❌ Incorrect',
+            'pf.modal.title': '<span class="badge bg-danger">PF</span> Threat Decision',
+            'pf.modal.threat': 'Threat:',
+            'pf.modal.options': 'Select a response:',
+            'pf.modal.cancel': 'Cancel',
+            'pf.modal.submit': 'Submit Plan',
+            'end.modal.title': 'Training Report',
+            'end.modal.button': 'End Session',
+            'alerts.enter_callsign': 'Please enter your callsign.',
+            'alerts.enter_room': 'Please enter a room ID (e.g., 101).',
+            'alerts.pf_only': 'Only the PF can identify threats.',
+            'alerts.select_option': 'Please select a response option.',
+            'alerts.partner_left': '⚠️ Partner {username} left the session. Training paused—wait for another member or refresh to restart.',
+            'tooltips.clickThreat': 'Click to identify threat',
+            'log.voice_on': '🔊 Voice playback enabled',
+            'log.voice_off': '🔇 Voice playback disabled',
+            'log.phase1.start': 'Pre-flight phase started. PF: identify threats; PM: monitor and verify.',
+            'log.pm.verify': '🔍 PM: Reviewing PF decision "{decision}"',
+            'log.threats.complete': '✅ All threats handled. Emergency quiz unlocked.',
+            'log.quiz.start': '📚 Emergency quiz started (PM action)',
+            'log.quiz.complete': '✅ Quiz complete. Ready for Phase 2.',
+            'log.phase2.start': 'Takeoff! Start monitoring instruments...',
+            'log.check_item': '{role} checked checklist item {index}',
+            'log.user_count': '👥 Room members: {count}/2 - {users}',
+            'log.user_left': '⚠️ {username} ({role}) left the session - remaining: {remaining}/2'
+        }
+    };
+    let currentLang = localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'zh';
+
+    const dynamicTextMap = {
+        "METAR": { zh: "METAR 情报", en: "METAR" },
+        "Aircraft": { zh: "飞机状态", en: "Aircraft" },
+        "Pilot": { zh: "机组状态", en: "Pilot" },
+        "METAR 显示阵风 25 节，可能超出侧风限制": {
+            zh: "METAR 显示阵风 25 节，可能超出侧风限制",
+            en: "METAR indicates gusting 25 kt, possibly exceeding crosswind limits"
+        },
+        "使用侧风起飞标准程序": {
+            zh: "使用侧风起飞标准程序",
+            en: "Apply the standard crosswind takeoff procedure"
+        },
+        "等待风况改善后起飞": {
+            zh: "等待风况改善后起飞",
+            en: "Delay departure until winds improve"
+        },
+        "忽略侧风影响，正常起飞": {
+            zh: "忽略侧风影响，正常起飞",
+            en: "Ignore the crosswind and depart normally"
+        },
+        "C172 侧风限制": { zh: "C172 侧风限制", en: "C172 Crosswind Limits" },
+        "最大演示侧风限制: 15 节": {
+            zh: "最大演示侧风限制: 15 节",
+            en: "Demonstrated crosswind limit: 15 kt"
+        },
+        "当前阵风: 25 节": { zh: "当前阵风: 25 节", en: "Current gusts: 25 kt" },
+        "状态: ⚠️ 超出限制": { zh: "状态: ⚠️ 超出限制", en: "Status: ⚠️ Beyond limit" },
+        "建议: 等待风况改善或使用侧风程序": {
+            zh: "建议: 等待风况改善或使用侧风程序",
+            en: "Advisory: Wait for better winds or use crosswind procedures"
+        },
+        "着陆灯故障（Landing Light Unserviceable）": {
+            zh: "着陆灯故障（Landing Light Unserviceable）",
+            en: "Landing light inoperative"
+        },
+        "查阅 MEL，确认可放行条件": {
+            zh: "查阅 MEL，确认可放行条件",
+            en: "Consult the MEL to confirm dispatch conditions"
+        },
+        "白天飞行无影响，继续起飞": {
+            zh: "白天飞行无影响，继续起飞",
+            en: "Day VFR is acceptable, continue departure"
+        },
+        "推迟航班，等待维修": {
+            zh: "推迟航班，等待维修",
+            en: "Delay the flight and wait for maintenance"
+        },
+        "MEL 着陆灯条款": {
+            zh: "MEL 着陆灯条款",
+            en: "MEL Landing Light Section"
+        },
+        "着陆灯故障放行条件:": {
+            zh: "着陆灯故障放行条件:",
+            en: "Dispatch criteria for landing light failure:"
+        },
+        "✅ 日间 VFR: 可放行": { zh: "✅ 日间 VFR: 可放行", en: "✅ Day VFR: allowed" },
+        "❌ 夜间或 IFR: 必须工作": {
+            zh: "❌ 夜间或 IFR: 必须工作",
+            en: "❌ Night or IFR: must be serviceable"
+        },
+        "当前条件: 日间 VFR (1800Z)": {
+            zh: "当前条件: 日间 VFR (1800Z)",
+            en: "Current condition: Day VFR (1800Z)"
+        },
+        "结论: 可放行，需记录": {
+            zh: "结论: 可放行，需记录",
+            en: "Conclusion: Dispatch allowed, log the defect"
+        },
+        "副驾驶身体状态：感冒恢复中": {
+            zh: "副驾驶身体状态：感冒恢复中",
+            en: "Copilot recovering from a cold"
+        },
+        "执行 IMSAFE 检查，评估适航性": {
+            zh: "执行 IMSAFE 检查，评估适航性",
+            en: "Run an IMSAFE check to assess fitness"
+        },
+        "简单航线无影响，继续": {
+            zh: "简单航线无影响，继续",
+            en: "Simple route has no impact, continue"
+        },
+        "飞行中持续监控身体状态": {
+            zh: "飞行中持续监控身体状态",
+            en: "Monitor physiological condition during flight"
+        },
+        "IMSAFE 检查": { zh: "IMSAFE 检查", en: "IMSAFE Checklist" },
+        "I - Illness (疾病)": { zh: "I - 疾病 (Illness)", en: "I - Illness" },
+        "M - Medication (药物)": { zh: "M - 药物 (Medication)", en: "M - Medication" },
+        "S - Stress (压力)": { zh: "S - 压力 (Stress)", en: "S - Stress" },
+        "A - Alcohol (酒精)": { zh: "A - 酒精 (Alcohol)", en: "A - Alcohol" },
+        "F - Fatigue (疲劳)": { zh: "F - 疲劳 (Fatigue)", en: "F - Fatigue" },
+        "E - Eating (饮食)": { zh: "E - 饮食 (Eating)", en: "E - Eating" },
+        "⚠️ 感冒可能影响判断力和反应时间": {
+            zh: "⚠️ 感冒可能影响判断力和反应时间",
+            en: "⚠️ A cold can affect judgement and reaction time"
+        },
+        "离地后，如果引擎失效且高度低于多少英尺，严禁掉头？": {
+            zh: "离地后，如果引擎失效且高度低于多少英尺，严禁掉头？",
+            en: "After liftoff, below what altitude is a turnback prohibited if the engine fails?"
+        },
+        "200 英尺": { zh: "200 英尺", en: "200 ft" },
+        "500 英尺": { zh: "500 英尺", en: "500 ft" },
+        "1000 英尺": { zh: "1000 英尺", en: "1000 ft" },
+        "1500 英尺": { zh: "1500 英尺", en: "1500 ft" },
+        "标准程序：500 英尺以下直线迫降，避免失速螺旋": {
+            zh: "标准程序：500 英尺以下直线迫降，避免失速螺旋",
+            en: "Standard: Below 500 ft land straight ahead to avoid stall-spin"
+        },
+        "发现引擎火警时，第一记忆项目是？": {
+            zh: "发现引擎火警时，第一记忆项目是？",
+            en: "When an engine fire is detected, what is the first memory item?"
+        },
+        "关闭主电门": { zh: "关闭主电门", en: "Master switch - OFF" },
+        "混合比 - CUTOFF": { zh: "混合比 - CUTOFF", en: "Mixture - CUTOFF" },
+        "打开灭火器": { zh: "打开灭火器", en: "Fire extinguisher - ACTIVATE" },
+        "宣布 MAYDAY": { zh: "宣布 MAYDAY", en: "Declare MAYDAY" },
+        "引擎火警首要动作：切断燃油供应": {
+            zh: "引擎火警首要动作：切断燃油供应",
+            en: "Engine fire: first cut the fuel supply"
+        },
+        "电气火灾的标准处置程序中，第一步是？": {
+            zh: "电气火灾的标准处置程序中，第一步是？",
+            en: "What is the first step in the electrical fire procedure?"
+        },
+        "打开所有通风口": { zh: "打开所有通风口", en: "Open all vents" },
+        "关闭主电门 (Master Switch OFF)": {
+            zh: "关闭主电门 (Master Switch OFF)",
+            en: "Master switch - OFF"
+        },
+        "降低高度": { zh: "降低高度", en: "Descend" },
+        "使用灭火器": { zh: "使用灭火器", en: "Use fire extinguisher" },
+        "电气火灾首要：切断电源": {
+            zh: "电气火灾首要：切断电源",
+            en: "Electrical fire: first cut power"
+        },
+        "LOW OIL PRESSURE": { zh: "机油压力低", en: "LOW OIL PRESSURE" },
+        "Throttle - REDUCE": { zh: "油门 - 减小", en: "Throttle - REDUCE" },
+        "Landing Area - SELECT": { zh: "着陆场 - 选择", en: "Landing Area - SELECT" },
+        "Prepare - FOR ENGINE FAILURE": {
+            zh: "准备 - 按发动机失效处置",
+            en: "Prepare - FOR ENGINE FAILURE"
+        },
+        "ENGINE FIRE IN FLIGHT": { zh: "空中发动机起火", en: "ENGINE FIRE IN FLIGHT" },
+        "Mixture - CUTOFF": { zh: "混合比 - 切断", en: "Mixture - CUTOFF" },
+        "Fuel Valve - OFF": { zh: "燃油阀 - 关闭", en: "Fuel Valve - OFF" },
+        "Master Switch - OFF": { zh: "主电门 - 关闭", en: "Master Switch - OFF" },
+        "Cabin Heat - OFF": { zh: "座舱加温 - 关闭", en: "Cabin Heat - OFF" },
+        "Airspeed - 105 KIAS": { zh: "空速 - 105 KIAS", en: "Airspeed - 105 KIAS" },
+        "ELECTRICAL FIRE": { zh: "电气火灾", en: "ELECTRICAL FIRE" },
+        "Vents/Cabin Air - CLOSED": {
+            zh: "通风/座舱空气 - 关闭",
+            en: "Vents/Cabin Air - CLOSED"
+        },
+        "Fire Extinguisher - ACTIVATE": {
+            zh: "灭火器 - 启动",
+            en: "Fire Extinguisher - ACTIVATE"
+        },
+        "Avionics - OFF": { zh: "航电 - 关闭", en: "Avionics - OFF" },
+        "CARBURETOR ICING": { zh: "化油器结冰", en: "CARBURETOR ICING" },
+        "Carburetor Heat - FULL ON": {
+            zh: "化油器加热 - 全开",
+            en: "Carburetor Heat - FULL ON"
+        },
+        "Throttle - OPEN slowly": { zh: "油门 - 缓慢推进", en: "Throttle - OPEN slowly" },
+        "Monitor - RPM RECOVERY": { zh: "监控 - RPM 恢复", en: "Monitor - RPM RECOVERY" },
+        "Mixture - ADJUST": { zh: "混合比 - 调整", en: "Mixture - ADJUST" },
+        "FUEL IMBALANCE": { zh: "燃油不平衡", en: "FUEL IMBALANCE" },
+        "Fuel Selector - SWITCH to fuller tank": {
+            zh: "燃油选择阀 - 转至油量较多的一侧",
+            en: "Fuel Selector - SWITCH to fuller tank"
+        },
+        "Cross-feed - OPEN (if available)": {
+            zh: "交输 - 打开（如可用）",
+            en: "Cross-feed - OPEN (if available)"
+        },
+        "Monitor - FUEL QTY": { zh: "监控 - 燃油量", en: "Monitor - FUEL QTY" },
+        "Plan - EARLY LANDING if severe": {
+            zh: "计划 - 情况严重则提前落地",
+            en: "Plan - EARLY LANDING if severe"
+        },
+        "VACUUM SYSTEM FAILURE": { zh: "真空系统故障", en: "VACUUM SYSTEM FAILURE" },
+        "Verify - ATTITUDE INDICATOR unreliable": {
+            zh: "确认 - 姿态仪不可靠",
+            en: "Verify - ATTITUDE INDICATOR unreliable"
+        },
+        "Use - TURN COORDINATOR for bank": {
+            zh: "使用 - 转弯协调仪控制倾斜",
+            en: "Use - TURN COORDINATOR for bank"
+        },
+        "Refer - MAGNETIC COMPASS": {
+            zh: "参考 - 磁罗盘",
+            en: "Refer - MAGNETIC COMPASS"
+        },
+        "Avoid - IMC if possible": {
+            zh: "避免 - 如可行避免进入仪表气象条件",
+            en: "Avoid - IMC if possible"
+        },
+        "ALTERNATOR FAILURE": { zh: "交流发电机失效", en: "ALTERNATOR FAILURE" },
+        "Alternator - CYCLE (OFF then ON)": {
+            zh: "交流发电机 - 循环（关再开）",
+            en: "Alternator - CYCLE (OFF then ON)"
+        },
+        "If no recovery - SHED LOAD": {
+            zh: "若无恢复 - 减载",
+            en: "If no recovery - SHED LOAD"
+        },
+        "Avionics - MINIMIZE": { zh: "航电 - 最小化", en: "Avionics - MINIMIZE" },
+        "Battery - MONITOR voltage": {
+            zh: "电池 - 监控电压",
+            en: "Battery - MONITOR voltage"
+        },
+        "Plan - NEAREST AIRPORT": {
+            zh: "计划 - 就近机场",
+            en: "Plan - NEAREST AIRPORT"
+        }
+    };
+
+    function getTranslation(lang, key) {
+        return translations[lang]?.[key] ?? translations.zh[key] ?? key;
+    }
+
+    function formatTranslation(template, params) {
+        if (!template || typeof template !== 'string') return template;
+        return template.replace(/\{(\w+)\}/g, (_, k) => (params && params[k] !== undefined ? params[k] : ''));
+    }
+
+    function t(key, params = {}, lang = currentLang) {
+        const template = getTranslation(lang, key);
+        return formatTranslation(template, params);
+    }
+
+    function translateElement(el, lang = currentLang) {
+        if (!el) return;
+        const key = el.getAttribute('data-i18n');
+        if (!key) return;
+        const mode = el.getAttribute('data-i18n-mode') || 'text';
+        let params = {};
+        if (el.dataset.i18nParams) {
+            try {
+                params = JSON.parse(el.dataset.i18nParams);
+            } catch (error) {
+                params = {};
+            }
+        }
+        const value = t(key, params, lang);
+        if (mode === 'html') {
+            el.innerHTML = value;
+        } else {
+            el.textContent = value;
+        }
+    }
+
+    function translatePlaceholder(el, lang = currentLang) {
+        if (!el) return;
+        const key = el.getAttribute('data-i18n-placeholder');
+        if (!key) return;
+        let params = {};
+        if (el.dataset.i18nPlaceholderParams) {
+            try {
+                params = JSON.parse(el.dataset.i18nPlaceholderParams);
+            } catch (error) {
+                params = {};
+            }
+        }
+        el.setAttribute('placeholder', t(key, params, lang));
+    }
+
+    function setDynamicTranslation(el, key, params = {}, mode = 'text') {
+        if (!el) return;
+        el.setAttribute('data-i18n', key);
+        if (mode === 'html') {
+            el.setAttribute('data-i18n-mode', 'html');
+        } else {
+            el.removeAttribute('data-i18n-mode');
+        }
+        if (params && Object.keys(params).length > 0) {
+            el.dataset.i18nParams = JSON.stringify(params);
+        } else if (el.dataset.i18nParams) {
+            delete el.dataset.i18nParams;
+        }
+        translateElement(el);
+    }
+
+    function clearElementTranslation(el) {
+        if (!el) return;
+        el.removeAttribute('data-i18n');
+        el.removeAttribute('data-i18n-mode');
+        if (el.dataset.i18nParams) delete el.dataset.i18nParams;
+    }
+
+    function translateDynamicText(text, lang = currentLang) {
+        if (text === undefined || text === null) return text;
+        const key = String(text).trim();
+        const entry = dynamicTextMap[key];
+        if (!entry) return text;
+        if (lang === 'en' && entry.en) return entry.en;
+        if (lang === 'zh' && entry.zh) return entry.zh;
+        return entry.en || entry.zh || text;
+    }
+
+    function translateDynamicArray(lines = [], lang = currentLang) {
+        return lines.map(line => translateDynamicText(line, lang));
+    }
+
+    function applyLanguage(lang = currentLang) {
+        currentLang = lang;
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
+        document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+        document.title = t('page.title', {}, lang);
+        const selector = document.getElementById('language-select');
+        if (selector) selector.value = lang;
+        document.querySelectorAll('[data-i18n]').forEach(el => translateElement(el, lang));
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => translatePlaceholder(el, lang));
+    }
+
+    function handleLanguageChange(lang) {
+        applyLanguage(lang);
+    }
 
     // 语音播放相关变量
     let voiceEnabled = false;  // 语音开关状态
@@ -525,9 +1064,9 @@
         console.log(`语音播报: ${voiceEnabled ? '开启' : '关闭'}`);
 
         if (voiceEnabled) {
-            log("🔊 语音播报已开启");
+            log(t('log.voice_on'));
         } else {
-            log("🔇 语音播报已关闭");
+            log(t('log.voice_off'));
         }
     }
 
@@ -710,8 +1249,8 @@
         const inputRoom = document.getElementById('room-id').value;
         const mode = document.getElementById('mode').value;  // 新增：获取训练模式
 
-        if(!u) return alert("请输入您的呼号");
-        if(!inputRoom) return alert("请输入房间号 (例如: 101)");
+        if(!u) return alert(t('alerts.enter_callsign'));
+        if(!inputRoom) return alert(t('alerts.enter_room'));
 
         room = inputRoom;
         myRole = r;
@@ -725,7 +1264,11 @@
         document.getElementById('login-panel').style.display = 'none';
         document.getElementById('sim-area').style.display = 'block';
 
-        document.querySelector('h4').innerHTML += ` <span class="badge bg-dark border border-secondary">Room: ${room}</span>`;
+        const roomBadge = document.getElementById('room-badge');
+        if (roomBadge) {
+            roomBadge.style.display = 'inline-block';
+            setDynamicTranslation(roomBadge, 'header.room_badge', {room});
+        }
 
         // 显示角色标识
         const roleBadge = document.getElementById('my-role-badge');
@@ -738,14 +1281,17 @@
 
     // 2. 渲染 Phase 1 文字
     socket.on('start_phase_1', (payload) => {
-        document.getElementById('phase-badge').innerText = "Phase 1";
+        setDynamicTranslation(document.getElementById('phase-badge'), 'phase.badge.phase1');
         document.getElementById('phase-badge').className = "badge bg-info";
         const box = document.getElementById('preflight-content');
         box.innerHTML = "";
 
         payload.data.forEach(item => {
             const row = document.createElement('div');
-            row.innerHTML = `<span class="tem-label">${item.label}:</span>`;
+            const label = document.createElement('span');
+            label.className = 'tem-label';
+            label.innerText = `${translateDynamicText(item.label)}:`;
+            row.appendChild(label);
 
             // 分词渲染，威胁关键词不高亮（让学员自己识别）
             item.content.split(' ').forEach(word => {
@@ -758,7 +1304,7 @@
                     // 只有 PF 可以点击
                     if (myRole === 'PF') {
                         span.onclick = () => identifyThreat(word);
-                        span.title = "点击识别威胁"; // 添加提示
+                        span.title = t('tooltips.clickThreat');
                     }
                 } else {
                     // 非威胁词不可点击
@@ -769,13 +1315,13 @@
             });
             box.appendChild(row);
         });
-        log("Pre-flight started. PF: Identify threats. PM: Monitor & Verify.");
+        log(t('log.phase1.start'));
     });
 
     // 3. PF 识别威胁
     function identifyThreat(keyword) {
         if (myRole !== 'PF') {
-            alert("只有 PF 可以识别威胁");
+            alert(t('alerts.pf_only'));
             return;
         }
         socket.emit('pf_identify_threat', {room: room, keyword: keyword});
@@ -785,7 +1331,7 @@
     socket.on('show_pf_decision_modal', (data) => {
         currentThreatKeyword = data.keyword;
         document.getElementById('pf-threat-keyword').innerText = data.keyword;
-        document.getElementById('pf-threat-desc').innerText = data.description;
+        document.getElementById('pf-threat-desc').innerText = translateDynamicText(data.description);
 
         const optionsList = document.getElementById('pf-options-list');
         optionsList.innerHTML = "";
@@ -793,9 +1339,10 @@
         data.options.forEach(opt => {
             const optDiv = document.createElement('div');
             optDiv.className = 'quiz-option';
+            const optionText = translateDynamicText(opt.text);
             optDiv.innerHTML = `
                 <input type="radio" name="pf-option" value="${opt.id}" id="opt-${opt.id}">
-                <label for="opt-${opt.id}" style="cursor: pointer; margin-left: 8px;">${opt.text}</label>
+                <label for="opt-${opt.id}" style="cursor: pointer; margin-left: 8px;">${optionText}</label>
             `;
             optDiv.onclick = () => {
                 document.getElementById(`opt-${opt.id}`).checked = true;
@@ -813,7 +1360,7 @@
     // 5. PF 提交决策
     function submitPFDecision() {
         if (!selectedOptionId) {
-            alert("请选择一个应对方案");
+            alert(t('alerts.select_option'));
             return;
         }
         socket.emit('pf_submit_decision', {
@@ -827,7 +1374,7 @@
 
     // 6. PF 等待 PM 验证
     socket.on('waiting_pm_verify', (data) => {
-        log(`⏳ ${data.msg}`);
+        log(`⏳ ${translateDynamicText(data.msg)}`);
     });
 
     // 7. PM 显示验证面板
@@ -835,19 +1382,19 @@
         if (myRole !== 'PM') return;
 
         const panel = document.getElementById('pm-verify-panel');
-        document.getElementById('pm-pf-decision').innerText = data.pf_decision;
-        document.getElementById('pm-sop-title').innerText = data.sop_data.title;
+        document.getElementById('pm-pf-decision').innerText = translateDynamicText(data.pf_decision);
+        document.getElementById('pm-sop-title').innerText = translateDynamicText(data.sop_data.title);
 
         const sopContent = document.getElementById('pm-sop-content');
         sopContent.innerHTML = "";
-        data.sop_data.content.forEach(line => {
+        translateDynamicArray(data.sop_data.content).forEach(line => {
             const li = document.createElement('li');
             li.innerText = line;
             sopContent.appendChild(li);
         });
 
         panel.style.display = 'block';
-        log(`🔍 PM: 验证 PF 的方案 "${data.pf_decision}"`);
+        log(t('log.pm.verify', {decision: translateDynamicText(data.pf_decision)}));
     });
 
     // 8. PM 验证决策
@@ -858,7 +1405,8 @@
 
     // 9. 显示威胁决策结果
     socket.on('threat_decision_result', (data) => {
-        log(`${data.msg} (${data.score_change >= 0 ? '+' : ''}${data.score_change})`);
+        const localizedMsg = translateDynamicText(data.msg);
+        log(`${localizedMsg} (${data.score_change >= 0 ? '+' : ''}${data.score_change})`);
 
         // 标记威胁关键词为已处理
         document.querySelectorAll('.tem-word').forEach(el => {
@@ -875,7 +1423,7 @@
 
         const statusItem = document.createElement('div');
         statusItem.className = `threat-status-item ${data.result}`;
-        statusItem.innerHTML = `<strong>${data.keyword}:</strong> ${data.msg}`;
+        statusItem.innerHTML = `<strong>${data.keyword}:</strong> ${localizedMsg}`;
         statusList.appendChild(statusItem);
 
         statusPanel.style.display = 'block';
@@ -884,7 +1432,7 @@
         const processedCount = document.querySelectorAll('.tem-word.threat-processed').length;
         if (processedCount === THREAT_KEYWORDS.length) {
             document.getElementById('btn-start-quiz').style.display = 'block';
-            log("✅ 所有威胁已处理，可以开始紧急预案测试");
+            log(t('log.threats.complete'));
         }
     });
 
@@ -903,18 +1451,22 @@
             const qDiv = document.createElement('div');
             qDiv.className = 'quiz-question';
             qDiv.id = `quiz-${q.id}`;
+            const questionLabel = t('quiz.questionLabel', {number: idx + 1});
+            const questionText = translateDynamicText(q.question);
             qDiv.innerHTML = `
-                <p><strong>问题 ${idx + 1}:</strong> ${q.question}</p>
+                <p><strong>${questionLabel}</strong> ${questionText}</p>
                 <div id="options-${q.id}"></div>
                 <div id="result-${q.id}" class="mt-2" style="display:none;"></div>
             `;
+            const questionLabelEl = qDiv.querySelector('p strong');
+            setDynamicTranslation(questionLabelEl, 'quiz.questionLabel', {number: idx + 1});
 
             const optionsDiv = qDiv.querySelector(`#options-${q.id}`);
             q.options.forEach(opt => {
                 const optDiv = document.createElement('div');
                 optDiv.className = 'quiz-option';
                 optDiv.id = `quiz-${q.id}-${opt.id}`;
-                optDiv.innerHTML = `${opt.id.toUpperCase()}. ${opt.text}`;
+                optDiv.innerHTML = `${opt.id.toUpperCase()}. ${translateDynamicText(opt.text)}`;
 
                 if (myRole === 'PM') {
                     optDiv.onclick = () => submitQuizAnswer(q.id, opt.id);
@@ -930,7 +1482,7 @@
         });
 
         container.style.display = 'block';
-        log("📚 紧急预案测试开始 (PM 操作)");
+        log(t('log.quiz.start'));
     });
 
     function submitQuizAnswer(questionId, answer) {
@@ -951,10 +1503,17 @@
         // 显示结果
         resultDiv.style.display = 'block';
         resultDiv.className = data.correct ? 'alert alert-success' : 'alert alert-danger';
-        resultDiv.innerHTML = `
-            <strong>${data.correct ? '✅ 正确' : '❌ 错误'}</strong> (${data.score_change >= 0 ? '+' : ''}${data.score_change})<br>
-            <small>${data.explanation}</small>
-        `;
+        resultDiv.innerHTML = '';
+        const resultLabelEl = document.createElement('strong');
+        setDynamicTranslation(resultLabelEl, data.correct ? 'quiz.correct' : 'quiz.incorrect');
+        resultDiv.appendChild(resultLabelEl);
+        const scoreSpan = document.createElement('span');
+        scoreSpan.innerHTML = ` (${data.score_change >= 0 ? '+' : ''}${data.score_change})`;
+        resultDiv.appendChild(scoreSpan);
+        resultDiv.appendChild(document.createElement('br'));
+        const explanation = document.createElement('small');
+        explanation.textContent = translateDynamicText(data.explanation);
+        resultDiv.appendChild(explanation);
 
         // 检查是否所有题都答完
         const totalQuestions = document.querySelectorAll('.quiz-question').length;
@@ -962,23 +1521,24 @@
 
         if (answeredQuestions >= totalQuestions) {
             document.getElementById('btn-next-phase').style.display = 'block';
-            log("✅ 测试完成，可以进入 Phase 2");
+            log(t('log.quiz.complete'));
         }
     });
 
     // 11. 切换 Phase 2
     function reqNext() {
         socket.emit('req_phase_2', {room: room});
-        document.getElementById('btn-next-phase').innerText = "等待对方确认...";
-        document.getElementById('btn-next-phase').disabled = true;
+        const nextBtn = document.getElementById('btn-next-phase');
+        setDynamicTranslation(nextBtn, 'phase1.next.waiting');
+        nextBtn.disabled = true;
     }
 
     socket.on('start_phase_2', (data) => {
         document.getElementById('phase1-panel').style.display = 'none';
         document.getElementById('phase2-panel').style.display = 'block';
-        document.getElementById('phase-badge').innerText = "Phase 2: In-flight";
+        setDynamicTranslation(document.getElementById('phase-badge'), 'phase.badge.phase2');
         document.getElementById('phase-badge').className = "badge bg-warning text-dark";
-        log("Takeoff! Monitoring instruments...");
+        log(t('log.phase2.start'));
     });
 
     // 12. 飞行数据更新
@@ -1030,35 +1590,39 @@
         if (gaugeEl) {
             gaugeEl.classList.add('monitored');
         }
-        log(`👁️ ${data.msg}`);
+        log(`👁️ ${translateDynamicText(data.msg)}`);
     });
 
     // 15. 接收征兆检测成功
     socket.on('precursor_detected', (data) => {
         const alertBox = document.getElementById('alert-box');
         alertBox.className = 'alert alert-success fw-bold';
-        alertBox.innerText = data.msg;
+        clearElementTranslation(alertBox);
+        const localizedMsg = translateDynamicText(data.msg);
+        alertBox.innerText = localizedMsg;
 
-        log(`${data.msg} (+${data.score})`);
+        log(`${localizedMsg} (+${data.score})`);
 
         // 3秒后恢复正常
         setTimeout(() => {
             alertBox.className = 'alert alert-dark text-center';
-            alertBox.innerText = 'MONITORING...';
+            setDynamicTranslation(alertBox, 'alerts.monitoring');
         }, 3000);
     });
 
     socket.on('event_trigger', (data) => {
         const alertBox = document.getElementById('alert-box');
         alertBox.className = `alert alert-danger fw-bold blink`;
-        alertBox.innerText = `⚠️ ${data.msg}`;
+        clearElementTranslation(alertBox);
+        const localizedMsg = translateDynamicText(data.msg);
+        alertBox.innerText = `⚠️ ${localizedMsg}`;
 
         const track = document.getElementById('route-track');
         const dot = document.createElement('div');
         dot.className = `event-dot dot-${data.type}`;
         dot.style.left = `${5 + (data.progress * 0.9)}%`;
         track.appendChild(dot);
-        log(`EVENT: ${data.msg}`);
+        log(`EVENT: ${localizedMsg}`);
     });
 
     // 13. 检查单与结算 (Phase 3)
@@ -1066,11 +1630,11 @@
 
     socket.on('show_checklist', (data) => {
         document.getElementById('chk-panel').style.display = 'block';
-        document.getElementById('chk-title').innerText = data.title;
-        document.getElementById('chk-msg').innerText = data.msg;
+        document.getElementById('chk-title').innerText = translateDynamicText(data.title);
+        document.getElementById('chk-msg').innerText = translateDynamicText(data.msg);
         const list = document.getElementById('chk-list');
         list.innerHTML = "";
-        data.items.forEach((txt, i) => {
+        translateDynamicArray(data.items).forEach((txt, i) => {
             list.innerHTML += `<div id="item-${i}" class="checklist-item" onclick="checkItem(${i})">⬜ ${txt}</div>`;
         });
     });
@@ -1081,7 +1645,7 @@
         const el = document.getElementById(`item-${data.index}`);
         el.className = "checklist-item done";
         el.innerText = el.innerText.replace("⬜", "✅");
-        log(`${data.role} checked item ${data.index + 1}`);
+        log(t('log.check_item', {role: data.role, index: data.index + 1}));
     });
 
     socket.on('mission_complete', (data) => {
@@ -1094,42 +1658,42 @@
 
     // 检查单完成（不是任务完成）
     socket.on('checklist_complete', (data) => {
-        log(data.msg);
+        log(translateDynamicText(data.msg));
         // 隐藏检查单面板，用户可以继续选择其他 QRH
         document.getElementById('chk-panel').style.display = 'none';
 
         // 清除右上角的告警显示
         const alertBox = document.getElementById('alert-box');
         alertBox.className = 'alert alert-dark text-center';
-        alertBox.innerText = 'SYSTEM NORMAL';
+        setDynamicTranslation(alertBox, 'alerts.normal');
     });
 
     socket.on('update_score', (data) => {
         document.getElementById('score').innerText = data.score;
     });
 
-    socket.on('sys_msg', (d) => log(d.msg));
+    socket.on('sys_msg', (d) => log(translateDynamicText(d.msg)));
 
     socket.on('error_msg', (data) => {
-        alert(data.msg);
+        alert(translateDynamicText(data.msg));
     });
 
     // 房间已满处理
     socket.on('room_full', (data) => {
-        alert(`❌ ${data.msg}`);
+        alert(`❌ ${translateDynamicText(data.msg)}`);
         location.reload();
     });
 
     // 用户人数更新
     socket.on('user_count_update', (data) => {
-        log(`👥 房间人数: ${data.count}/2 - ${data.usernames.join(', ')}`);
+        log(t('log.user_count', {count: data.count, users: data.usernames.join(', ')}));
     });
 
     // 用户离开处理
     socket.on('user_left', (data) => {
-        log(`⚠️ ${data.username} (${data.role}) 离开了训练 - 剩余人数: ${data.remaining_count}/2`);
+        log(t('log.user_left', {username: data.username, role: data.role, remaining: data.remaining_count}));
         if (data.remaining_count < 2) {
-            alert(`⚠️ 搭档 ${data.username} 已离开，训练暂停。请等待其他人加入或刷新页面重新开始。`);
+            alert(t('alerts.partner_left', {username: data.username}));
         }
     });
 
@@ -1162,7 +1726,8 @@
         msgDiv.className = `chat-message ${messageClass}`;
         msgDiv.id = messageId;
 
-        const time = new Date(timestamp).toLocaleTimeString('zh-CN', {
+        const locale = currentLang === 'zh' ? 'zh-CN' : 'en-US';
+        const time = new Date(timestamp).toLocaleTimeString(locale, {
             hour: '2-digit',
             minute: '2-digit'
         });
@@ -1208,6 +1773,7 @@
 
     // 支持回车发送
     document.addEventListener('DOMContentLoaded', () => {
+        applyLanguage(currentLang);
         const chatInput = document.getElementById('chat-input');
         if (chatInput) {
             chatInput.addEventListener('keypress', (e) => {
