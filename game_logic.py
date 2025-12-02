@@ -3,7 +3,7 @@
 游戏业务逻辑层 - 统一的接口供人类和AI调用
 所有业务逻辑都在这里，与socketio解耦
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from data.phase1_data import PHASE1_THREATS, EMERGENCY_QUIZ
 from data.qrh_library import QRH_LIBRARY
@@ -414,24 +414,28 @@ class GameLogic:
     # Phase 2: 仪表监控
     # ==========================================
 
-    def monitor_gauge(self, room: str, gauge_id: str, actor: Actor) -> bool:
+    def monitor_gauge(self, room: str, gauge_id: str, actor: Actor) -> Dict:
         """
         用户标记监控某个仪表
 
         Returns:
-            bool: 是否标记成功
+            Dict: 仪表监控信息（包含当前状态）
         """
         if room not in self.rooms:
-            return False
+            return {'success': False}
 
         # 添加到监控集合
         self.rooms[room]['monitored_gauges'].add(gauge_id)
+
+        # 获取当前仪表状态
+        current_value = self.rooms[room]['gauge_states'].get(gauge_id)
 
         # 记录日志
         self.log_action(room, actor.username, actor.role, "monitor_gauge",
                        details={
                            "gauge_id": gauge_id,
-                           "gauge_name": GAUGE_CONFIGS[gauge_id]['name']
+                           "gauge_name": GAUGE_CONFIGS[gauge_id]['name'],
+                           "current_value": current_value
                        },
                        phase="phase2")
 
@@ -441,7 +445,14 @@ class GameLogic:
             'msg': f"已标记监控: {GAUGE_CONFIGS[gauge_id]['name']}"
         }, room=room)
 
-        return True
+        # 返回仪表信息供AI分析
+        return {
+            'success': True,
+            'gauge_id': gauge_id,
+            'gauge_name': GAUGE_CONFIGS[gauge_id]['name'],
+            'current_value': current_value,
+            'gauge_config': GAUGE_CONFIGS.get(gauge_id, {})
+        }
 
     # ==========================================
     # Phase 3: QRH检查单

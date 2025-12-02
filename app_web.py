@@ -781,7 +781,22 @@ def run_sim_loop(room):
                                     'msg': alert['message'],
                                     'progress': progress
                                 }
-                                run_async_in_greenlet(ai_agent.on_event_alert(event_data))
+
+                                # 后台任务中调用：使用线程隔离避免event loop冲突
+                                def event_alert_in_thread():
+                                    import asyncio
+                                    import threading
+                                    # 在原生线程中运行，完全隔离
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    try:
+                                        loop.run_until_complete(ai_agent.on_event_alert(event_data))
+                                    finally:
+                                        loop.close()
+
+                                # 使用原生线程而非greenlet
+                                thread = threading.Thread(target=event_alert_in_thread, daemon=True)
+                                thread.start()
 
                         # 如果用户之前没有在征兆阶段检测到，给予警报反应分数
                         if event_id not in rooms[room]['event_detections']:
@@ -874,7 +889,15 @@ def handle_monitor_gauge(data):
 
     # 调用统一业务逻辑层
     actor = Actor(username, user_role, is_ai=False, sid=request.sid)
-    game_logic.monitor_gauge(room, gauge_id, actor)
+    gauge_info = game_logic.monitor_gauge(room, gauge_id, actor)
+
+    # === AI触发：人类点击仪表时，AI用Slow Engine分析并提供教学 ===
+    if rooms[room]['ai_enabled'] and gauge_info.get('success'):
+        ai_agent = rooms[room]['ai_agent']
+        if ai_agent:
+            print(f"[AI触发] 用户点击仪表 {gauge_id}，触发AI深度分析...")
+            # socketio事件中，使用标准方式（与Phase 1相同）
+            run_async_in_greenlet(ai_agent.on_gauge_monitored_by_human(gauge_info))
 
 # --- Phase 3: 动态决策判定 ---
 @socketio.on('select_checklist')
@@ -905,6 +928,7 @@ def handle_select(data):
                 'items': qrh['items'],
                 'msg': ''  # AI不需要msg
             }
+            # socketio事件中，使用标准方式（与Phase 1相同）
             run_async_in_greenlet(ai_agent.on_checklist_shown(checklist_data))
 
 @socketio.on('check_item')
@@ -975,7 +999,7 @@ def handle_chat_message(data):
                 'message': message,
                 'timestamp': chat_record['timestamp']
             }
-            # 异步触发AI分析和回复
+            # socketio事件中，使用标准方式（与Phase 1相同）
             run_async_in_greenlet(ai_agent.on_chat_message(chat_data))
 
 # --- TTS 语音生成请求 ---

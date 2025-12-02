@@ -275,3 +275,117 @@ PF提出的方案: {pf_decision_data['pf_decision']}
     # TODO: 添加更多策略方法
     # - strategize_qrh_selection: QRH选择策略
     # - strategize_gauge_monitoring: 仪表监控策略
+
+    async def strategize_gauge_analysis(self, gauge_info: Dict) -> Strategy:
+        """
+        Phase 2: 仪表点击分析策略（使用Slow Engine）
+
+        Args:
+            gauge_info: 仪表信息（包含知识库）
+
+        Returns:
+            Strategy: 分析结果
+        """
+        print(f"[SlowEngine] 仪表分析策略思考...")
+
+        gauge_name = gauge_info.get('gauge_name', '未知仪表')
+        current_value = gauge_info.get('current_value', 0)
+        knowledge = gauge_info.get('knowledge', {})
+
+        prompt = f"""你是一名经验丰富的C172飞行教员，学员刚刚点击了"{knowledge.get('full_name', gauge_name)}"仪表。
+
+【当前状态】
+- 仪表: {knowledge.get('full_name', gauge_name)}
+- 当前数值: {current_value} {knowledge.get('unit', '')}
+- 正常范围: {knowledge.get('normal_range', '未知')}
+
+【任务】
+用80字以内，简洁专业地回答：
+1. 当前数值是否正常
+2. 如果出现异常，典型征兆是什么样的
+3. 可能对应的威胁类型
+4. 给出监控建议
+
+风格要求：简洁、专业、像真正的飞行教员，不要啰嗦。"""
+
+        await asyncio.sleep(random_delay(*self.slow_thinking_time))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+
+            # 构建Strategy对象
+            strategy = Strategy(
+                thinking="仪表分析完成",
+                assessment={},
+                recommendation={"analysis": response},
+                next_focus="",
+                explanation=response  # 分析结果直接作为explanation
+            )
+
+            print(f"[SlowEngine] 仪表分析完成: {response[:50]}...")
+            return strategy
+
+        except Exception as e:
+            print(f"[SlowEngine] 仪表分析错误: {e}")
+            return Strategy(
+                thinking="分析失败",
+                assessment={},
+                recommendation={},
+                next_focus="",
+                explanation=f"{gauge_name}已标记。如发现异常，请及时报告。"
+            )
+
+    async def strategize_qrh_explanation(self, qrh_key: str, alert_desc: str, qrh_knowledge: Dict) -> Strategy:
+        """
+        Phase 2: QRH选择解释策略（使用Slow Engine）
+
+        Args:
+            qrh_key: QRH键名
+            alert_desc: 警报描述
+            qrh_knowledge: QRH知识库
+
+        Returns:
+            Strategy: 解释结果
+        """
+        print(f"[SlowEngine] QRH解释策略思考...")
+
+        prompt = f"""你是C172飞行教员，刚选择了"{qrh_knowledge.get('title', qrh_key)}"应急程序。
+
+【情况】
+- 警报: {alert_desc}
+- 选择的QRH: {qrh_knowledge.get('title', qrh_key)}
+- 程序目标: {qrh_knowledge.get('goal', '未知')}
+- 核心步骤: {qrh_knowledge.get('key_steps', '未知')}
+
+【任务】
+用60字以内，像真正的教员一样，简要解释：
+1. 为什么这是正确的选择
+2. 这个程序的核心目标是什么
+
+要求：简洁、专业、教学性强。"""
+
+        await asyncio.sleep(random_delay(2, 4))
+
+        try:
+            response = await self.slow_engine.chat(prompt, stream=False)
+
+            strategy = Strategy(
+                thinking="QRH解释完成",
+                assessment={},
+                recommendation={"explanation": response},
+                next_focus="",
+                explanation=response
+            )
+
+            print(f"[SlowEngine] QRH解释完成: {response[:50]}...")
+            return strategy
+
+        except Exception as e:
+            print(f"[SlowEngine] QRH解释错误: {e}")
+            return Strategy(
+                thinking="解释失败",
+                assessment={},
+                recommendation={},
+                next_focus="",
+                explanation=""
+            )

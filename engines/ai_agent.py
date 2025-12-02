@@ -307,11 +307,113 @@ class DualProcessAIAgent:
             print(f"[FastEngine] 答题错误: {e}")
 
     # ==========================================
-    # Phase 2: 空中监控（旧实现）
+    # Phase 2: 空中监控（智能分析 - 使用Slow Engine）
     # ==========================================
 
+    async def on_gauge_monitored_by_human(self, gauge_info: Dict):
+        """
+        人类标记仪表时，AI提供深度分析（使用Slow Engine）
+
+        这是展示AI教学价值的关键功能！
+
+        Args:
+            gauge_info: 仪表信息
+                - gauge_id: 仪表ID
+                - gauge_name: 仪表名称
+                - current_value: 当前数值
+                - gauge_config: 仪表配置
+        """
+        gauge_id = gauge_info['gauge_id']
+        gauge_name = gauge_info['gauge_name']
+        current_value = gauge_info['current_value']
+        config = gauge_info.get('gauge_config', {})
+
+        print(f"[Slow Engine] 开始分析仪表: {gauge_name} ({gauge_id}) = {current_value}")
+
+        # 仪表知识库（简化版）
+        gauge_knowledge = {
+            'oil_p': {
+                'full_name': '滑油压力 (Oil Pressure)',
+                'unit': 'PSI',
+                'normal_range': '60-90 PSI',
+                'critical_low': '60 PSI',
+                'failure_mode': '滑油泵故障、滑油泄漏、滑油品质问题',
+                'consequence': '发动机润滑不足，可能导致永久性损坏',
+                'related_qrh': 'LOW OIL PRESSURE'
+            },
+            'rpm': {
+                'full_name': '发动机转速 (RPM)',
+                'unit': 'RPM',
+                'normal_range': '2200-2500 RPM (巡航)',
+                'critical_low': '2000 RPM',
+                'failure_mode': '发动机功率不足、化油器结冰、燃油系统问题',
+                'consequence': '动力不足，无法维持高度',
+                'related_qrh': 'CARBURETOR ICING / ENGINE FAILURE'
+            },
+            'fuel_qty': {
+                'full_name': '燃油量 (Fuel Quantity)',
+                'unit': '加仑',
+                'normal_range': '两侧平衡，总量足够',
+                'critical_low': '单侧低于10加仑或不平衡>15加仑',
+                'failure_mode': '燃油不平衡、燃油泄漏',
+                'consequence': '重心偏移、续航不足',
+                'related_qrh': 'FUEL IMBALANCE'
+            },
+            'vacuum': {
+                'full_name': '真空压力 (Vacuum Pressure)',
+                'unit': '英寸汞柱',
+                'normal_range': '4.5-5.5 inHg',
+                'critical_low': '4.0 inHg',
+                'failure_mode': '真空泵故障、管路泄漏',
+                'consequence': '姿态仪表失效',
+                'related_qrh': 'VACUUM FAILURE'
+            },
+            'ammeter': {
+                'full_name': '电流表 (Ammeter)',
+                'unit': '安培',
+                'normal_range': '-5 to +5 A',
+                'critical_low': '持续负值（放电）',
+                'failure_mode': '发电机故障、电气系统过载',
+                'consequence': '电池耗尽，电气设备失效',
+                'related_qrh': 'ALTERNATOR FAILURE'
+            }
+        }
+
+        knowledge = gauge_knowledge.get(gauge_id, {
+            'full_name': gauge_name,
+            'normal_range': f'基准值: {config.get("baseline", "未知")}',
+            'failure_mode': '异常征兆',
+            'related_qrh': '相关应急程序'
+        })
+
+        # 准备传递给StrategyGenerator的数据
+        analysis_data = {
+            'gauge_name': gauge_name,
+            'current_value': current_value,
+            'knowledge': knowledge
+        }
+
+        # === 使用StrategyGenerator（和Phase 1相同方式）===
+        try:
+            strategy = await self.strategy_gen.strategize_gauge_analysis(analysis_data)
+
+            # 发送分析结果
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.send_ai_message(self.room, strategy.explanation, actor, enable_tts=False)
+
+            print(f"[AI教学] 仪表分析已发送给用户")
+
+        except Exception as e:
+            print(f"[Slow Engine] 分析失败: {e}")
+            # 降级：使用规则生成简单提示
+            fallback_msg = f"{gauge_name}已标记。如发现异常，请及时报告。"
+            from game_logic import Actor
+            actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+            self.game_logic.send_ai_message(self.room, fallback_msg, actor, enable_tts=False)
+
     async def on_phase2_gauge_update(self, gauge_states: Dict):
-        """Phase 2: 监控仪表 - 快速检测异常"""
+        """Phase 2: 监控仪表 - 快速检测异常（保留但未调用）"""
         abnormal = detect_abnormal_gauges(gauge_states)
 
         if abnormal:
@@ -327,7 +429,7 @@ class DualProcessAIAgent:
     # ==========================================
 
     async def on_event_alert(self, event_data: Dict):
-        """事件警报 - 快速匹配QRH并主动沟通"""
+        """事件警报 - 快速匹配QRH并主动沟通（增强版：使用Slow Engine解释）"""
         print(f"[DualProcessAI] 收到事件警报: {event_data['msg']}")
 
         # 简单规则匹配
@@ -381,6 +483,73 @@ class DualProcessAIAgent:
 
             # 选择QRH
             self.game_logic.select_qrh(self.room, qrh_key, actor)
+
+            # === 新增：使用Slow Engine解释为什么选择这个QRH ===
+            await self._explain_qrh_choice(qrh_key, alert_desc)
+
+    async def _explain_qrh_choice(self, qrh_key: str, alert_desc: str):
+        """
+        使用Slow Engine解释QRH选择的理由（教学功能）
+        """
+        # QRH知识库
+        qrh_knowledge = {
+            'low_oil_pressure': {
+                'title': 'LOW OIL PRESSURE',
+                'goal': '保护发动机避免润滑不足导致永久损坏',
+                'key_steps': '降低功率、监控压力温度、寻找应急着陆场地'
+            },
+            'carburetor_icing': {
+                'title': 'CARBURETOR ICING',
+                'goal': '恢复发动机功率，防止熄火',
+                'key_steps': '加热化油器、调整混合比、监控RPM'
+            },
+            'fuel_imbalance': {
+                'title': 'FUEL IMBALANCE',
+                'goal': '恢复燃油平衡，避免重心偏移',
+                'key_steps': '切换油箱、平衡用油、监控两侧油量'
+            },
+            'vacuum_failure': {
+                'title': 'VACUUM FAILURE',
+                'goal': '使用备用仪表，安全导航',
+                'key_steps': '依赖电动姿态仪、减少仪表依赖、目视飞行'
+            },
+            'alternator_failure': {
+                'title': 'ALTERNATOR FAILURE',
+                'goal': '节约电力，延长电池续航',
+                'key_steps': '关闭非必要设备、降低电气负载、尽快着陆'
+            },
+            'engine_fire': {
+                'title': 'ENGINE FIRE',
+                'goal': '扑灭火源，保护机体和人员',
+                'key_steps': '关闭燃油、灭火剂、应急着陆'
+            },
+            'electrical_fire': {
+                'title': 'ELECTRICAL FIRE',
+                'goal': '切断电源，扑灭火警',
+                'key_steps': '总电源关闭、通风、使用灭火器'
+            }
+        }
+
+        knowledge = qrh_knowledge.get(qrh_key, {})
+        if not knowledge:
+            return
+
+        # === 使用StrategyGenerator（和Phase 1相同方式）===
+        try:
+            print(f"[Slow Engine] 开始生成QRH解释...")
+
+            strategy = await self.strategy_gen.strategize_qrh_explanation(qrh_key, alert_desc, knowledge)
+
+            if strategy.explanation:
+                # 发送解释
+                from game_logic import Actor
+                actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+                self.game_logic.send_ai_message(self.room, strategy.explanation, actor, enable_tts=False)
+
+                print(f"[AI教学] QRH解释已发送")
+
+        except Exception as e:
+            print(f"[Slow Engine] QRH解释生成失败: {e}")
 
     async def on_checklist_shown(self, checklist_data: Dict):
         """执行检查单 - Fast Engine快速执行，并主动汇报进度"""
