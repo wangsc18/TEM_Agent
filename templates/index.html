@@ -545,6 +545,7 @@
     const socket = io();
     let room = "";
     let myRole = "";
+    let trainingMode = "";  // 新增：保存训练模式（dual_player/single_player）
     let pfDecisionModal;
     let currentThreatKeyword = "";
     let selectedOptionId = "";
@@ -582,6 +583,7 @@
             'phase1.quiz.button': '开始紧急预案测试',
             'phase1.next.button': '检查完毕，准备起飞 (Cross-check)',
             'phase1.next.waiting': '等待对方确认...',
+            'phase1.next.preparing': '准备起飞...',  // 单人模式提示
             'phase2.title': 'Phase 2: In-flight (空中巡航)',
             'phase2.tip': '💡 点击仪表标记监控异常征兆，提前发现故障可获得额外分数！',
             'route.legend': '航迹进度',
@@ -669,6 +671,7 @@
             'phase1.quiz.button': 'Start Emergency Quiz',
             'phase1.next.button': 'Check complete, ready for takeoff (Cross-check)',
             'phase1.next.waiting': 'Waiting for partner confirmation...',
+            'phase1.next.preparing': 'Preparing for takeoff...',  // Single-player mode
             'phase2.title': 'Phase 2: In-flight (Cruise Monitoring)',
             'phase2.tip': '💡 Click an instrument to tag abnormal precursors and earn bonus points.',
             'route.legend': 'Visualized Flight Progress',
@@ -1254,6 +1257,7 @@
 
         room = inputRoom;
         myRole = r;
+        trainingMode = mode;  // 新增：保存训练模式到全局变量
 
         socket.emit('join', {
             username: u,
@@ -1529,7 +1533,14 @@
     function reqNext() {
         socket.emit('req_phase_2', {room: room});
         const nextBtn = document.getElementById('btn-next-phase');
-        setDynamicTranslation(nextBtn, 'phase1.next.waiting');
+
+        // === 单人模式优化：显示不同的提示文本 ===
+        if (trainingMode === 'single_player') {
+            setDynamicTranslation(nextBtn, 'phase1.next.preparing');  // "准备起飞..."
+        } else {
+            setDynamicTranslation(nextBtn, 'phase1.next.waiting');  // "等待对方确认..."
+        }
+
         nextBtn.disabled = true;
     }
 

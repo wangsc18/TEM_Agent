@@ -557,7 +557,11 @@ def handle_req_phase_2(data):
                details={"ready_count": len(rooms[room]['ready_for_next'])},
                phase="phase1")
 
-    if len(rooms[room]['ready_for_next']) >= 2:
+    # === 修复：单人模式下直接进入Phase 2 ===
+    mode = rooms[room].get('mode', 'dual_player')
+    required_ready_count = 1 if mode == 'single_player' else 2
+
+    if len(rooms[room]['ready_for_next']) >= required_ready_count:
         start_simulation(room)
     else:
         emit('sys_msg', {'msg': "等待机组搭档确认..."}, room=room)

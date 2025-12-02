@@ -149,6 +149,13 @@ class DualProcessAIAgent:
 
         print(f"[DualProcessAI] PF 完成所有威胁识别")
 
+        # === 主动沟通：PF完成所有威胁识别后提示 ===
+        from game_logic import Actor
+        actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+        completion_msg = "所有威胁已识别并完成决策，等待PM完成测试后准备起飞"
+        self.game_logic.send_ai_message(self.room, completion_msg, actor, enable_tts=False)
+        print(f"[AI主动沟通] Phase 1 PF完成: {completion_msg}")
+
     async def on_pf_decision_request(self, keyword: str, threat_data: Dict):
         """
         PF决策请求 - 使用新架构
@@ -264,6 +271,13 @@ class DualProcessAIAgent:
         for question_data in questions:
             await self._answer_quiz_question(question_data)
 
+        # === 主动沟通：PM完成测试后提示 ===
+        from game_logic import Actor
+        actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+        completion_msg = f"测试已完成，共{len(questions)}题。准备好后可以进入下一阶段"
+        self.game_logic.send_ai_message(self.room, completion_msg, actor, enable_tts=False)
+        print(f"[AI主动沟通] Phase 1 PM完成: {completion_msg}")
+
     async def _answer_quiz_question(self, question_data: Dict):
         """回答单个测试题"""
         print(f"[DualProcessAI] PM 收到测试题: {question_data['question'][:30]}...")
@@ -313,7 +327,7 @@ class DualProcessAIAgent:
     # ==========================================
 
     async def on_event_alert(self, event_data: Dict):
-        """事件警报 - 快速匹配QRH"""
+        """事件警报 - 快速匹配QRH并主动沟通"""
         print(f"[DualProcessAI] 收到事件警报: {event_data['msg']}")
 
         # 简单规则匹配
@@ -329,31 +343,99 @@ class DualProcessAIAgent:
             'ELECTRICAL FIRE': 'electrical_fire'
         }
 
+        # 警报中文描述（用于沟通）
+        alert_descriptions = {
+            'OIL PRESSURE': '滑油压力警报',
+            'CARBURETOR ICING': '化油器结冰',
+            'FUEL IMBALANCE': '燃油不平衡',
+            'VACUUM': '真空系统故障',
+            'ALTERNATOR': '发电机故障',
+            'ENGINE FIRE': '发动机火警',
+            'ELECTRICAL FIRE': '电气火警'
+        }
+
         qrh_key = None
+        alert_desc = '警报'
         for keyword, key in qrh_keywords.items():
             if keyword in msg:
                 qrh_key = key
+                alert_desc = alert_descriptions.get(keyword, '警报')
                 break
 
         if qrh_key:
-            await asyncio.sleep(1)
-
+            # === 主动沟通1：确认警报并告知应对计划 ===
             from game_logic import Actor
             actor = Actor(f"AI {self.role}", self.role, is_ai=True)
+
+            # 根据角色定制消息
+            if self.role == "PF":
+                message = f"收到，{alert_desc}。我来选择应急程序"
+            else:  # PM
+                message = f"{alert_desc}确认，我来处理应急检查单"
+
+            self.game_logic.send_ai_message(self.room, message, actor)
+            print(f"[AI主动沟通] 警报确认: {message}")
+
+            # 稍作延迟，模拟确认时间
+            await asyncio.sleep(1)
+
+            # 选择QRH
             self.game_logic.select_qrh(self.room, qrh_key, actor)
 
     async def on_checklist_shown(self, checklist_data: Dict):
-        """执行检查单 - Fast Engine快速执行"""
+        """执行检查单 - Fast Engine快速执行，并主动汇报进度"""
         items_count = len(checklist_data['items'])
+        checklist_title = checklist_data.get('title', '检查单')
 
-        print(f"[DualProcessAI] 执行检查单: {checklist_data['title']} ({items_count}项)")
+        print(f"[DualProcessAI] 执行检查单: {checklist_title} ({items_count}项)")
 
         from game_logic import Actor
         actor = Actor(f"AI {self.role}", self.role, is_ai=True)
 
+        # === 主动沟通2：宣布开始执行检查单 ===
+        start_message = f"开始执行{checklist_title}，共{items_count}项"
+        self.game_logic.send_ai_message(self.room, start_message, actor)
+        print(f"[AI主动沟通] 检查单开始: {start_message}")
+
+        # 短暂延迟后开始执行
+        await asyncio.sleep(0.5)
+
+        # 执行检查单
         for i in range(items_count):
             await asyncio.sleep(random_delay(1.5, 3))
             self.game_logic.check_item(self.room, i, actor)
+
+            # === 可选：关键步骤汇报（仅在中间点汇报，避免过度冗余）===
+            # 如果是长检查单（>6项），在中间汇报一次进度
+            if items_count > 6 and i == items_count // 2:
+                progress_msg = f"检查单进度：{i+1}/{items_count}"
+                self.game_logic.send_ai_message(self.room, progress_msg, actor, enable_tts=False)
+                print(f"[AI主动沟通] 进度汇报: {progress_msg}")
+
+        # === 主动沟通3：确认完成并建议后续动作 ===
+        await asyncio.sleep(0.5)
+
+        # 根据检查单类型给出不同的完成消息
+        completion_messages = {
+            'low_oil_pressure': '滑油压力应急程序已完成，请继续监控滑油压力和温度',
+            'carburetor_icing': '化油器结冰处理完成，请监控发动机转速',
+            'fuel_imbalance': '燃油转换完成，请监控两侧油量平衡',
+            'vacuum_failure': '真空系统故障处理完成，请使用备用姿态仪表',
+            'alternator_failure': '发电机故障处理完成，请减少非必要电气设备',
+            'engine_fire': '发动机火警处理完成，准备应急着陆',
+            'electrical_fire': '电气火警处理完成，请监控驾驶舱烟雾'
+        }
+
+        # 从房间状态获取当前使用的QRH（如果有）
+        room_state = self.game_logic.rooms.get(self.room, {})
+        used_qrh = room_state.get('used_qrh', set())
+
+        # 找出最近使用的QRH（最后一个）
+        qrh_key = list(used_qrh)[-1] if used_qrh else None
+        completion_msg = completion_messages.get(qrh_key, f"{checklist_title}已完成")
+
+        self.game_logic.send_ai_message(self.room, completion_msg, actor)
+        print(f"[AI主动沟通] 检查单完成: {completion_msg}")
 
     # ==========================================
     # 聊天消息响应（新增）
