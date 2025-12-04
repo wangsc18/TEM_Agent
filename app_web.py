@@ -15,7 +15,9 @@ import threading
 import queue
 
 # 导入数据配置
-from data.phase1_data import PHASE1_DATA, PHASE1_THREATS, EMERGENCY_QUIZ
+from data.phase1_data import (
+    select_and_apply_scenario, get_current_scenario, ALL_SCENARIOS
+)
 from data.phase2_scenarios import SCENARIO_LIBRARY  # 保留作为备选
 from data.phase2_advanced import (
     MULTI_EVENT_SCENARIOS,
@@ -280,13 +282,26 @@ def on_join(data):
             "chat_history": []       # 保存聊天消息历史，供AI分析使用
         }
 
+        # 随机选择阶段一场景并应用
+        selected_scenario = select_and_apply_scenario(scenario_index=0)
+        rooms[room]["phase1_scenario_name"] = selected_scenario["name"]
+        rooms[room]["phase1_scenario_desc"] = selected_scenario["description"]
+        rooms[room]["phase1_scenario_data"] = selected_scenario["data"]  # 保存场景数据
+        rooms[room]["phase1_scenario_threats"] = selected_scenario["threats"]  # 保存威胁数据
+        rooms[room]["phase1_scenario_quiz"] = selected_scenario["quiz"]  # 保存测试题
+        print(f"[Phase1] 为房间 {room} 选择场景: {selected_scenario['name']} - {selected_scenario['description']}")
+
         # 写入会话开始日志
         with open(log_filepath, 'w', encoding='utf-8') as f:
             session_init = {
                 "event": "session_created",
                 "timestamp": datetime.now().isoformat(),
                 "room": room,
-                "log_file": log_filename
+                "log_file": log_filename,
+                "phase1_scenario": {
+                    "name": selected_scenario["name"],
+                    "description": selected_scenario["description"]
+                }
             }
             f.write(json.dumps(session_init, ensure_ascii=False) + '\n')
 
@@ -367,10 +382,17 @@ def on_join(data):
 
         # 达到2人（1人+AI），启动训练
         rooms[room]['current_phase'] = "phase1"
-        socketio.emit('start_phase_1', {"data": PHASE1_DATA}, room=room)
+        phase1_data = rooms[room]['phase1_scenario_data']  # 从房间获取场景数据
+        phase1_threats = rooms[room]['phase1_scenario_threats']  # 获取威胁库
+        threat_keywords = list(phase1_threats.keys())  # 提取威胁关键词列表
+
+        socketio.emit('start_phase_1', {
+            "data": phase1_data,
+            "threat_keywords": threat_keywords  # 发送威胁关键词列表
+        }, room=room)
 
         # 触发AI准备（使用通用异步运行器）
-        run_async_in_greenlet(ai_agent.on_phase1_start(PHASE1_DATA))
+        run_async_in_greenlet(ai_agent.on_phase1_start(phase1_data))
 
         # 通知房间内人数
         socketio.emit('user_count_update', {
@@ -415,10 +437,17 @@ def on_join(data):
     # 当第2个人加入时，启动训练
     if len(rooms[room]['users']) == 2:
         rooms[room]['current_phase'] = "phase1"
+        phase1_data = rooms[room]['phase1_scenario_data']  # 从房间获取场景数据
+        phase1_threats = rooms[room]['phase1_scenario_threats']  # 获取威胁库
+        threat_keywords = list(phase1_threats.keys())  # 提取威胁关键词列表
+
         log_action(room, "SYSTEM", "SYSTEM", "phase_started",
-                   details={"phase": "phase1", "data": PHASE1_DATA},
+                   details={"phase": "phase1", "data": phase1_data},
                    phase="phase1")
-        socketio.emit('start_phase_1', {"data": PHASE1_DATA}, room=room)
+        socketio.emit('start_phase_1', {
+            "data": phase1_data,
+            "threat_keywords": threat_keywords  # 发送威胁关键词列表
+        }, room=room)
 
 # --- Phase 1: 威胁识别与决策 ---
 @socketio.on('pf_identify_threat')
@@ -440,8 +469,12 @@ def handle_pf_identify(data):
         emit('error_msg', {'msg': "威胁识别失败"})
         return
 
-    # 获取威胁数据用于AI触发
-    threat_data = PHASE1_THREATS[keyword]
+    # 获取房间的威胁数据用于AI触发
+    phase1_threats = rooms[room].get('phase1_scenario_threats', {})
+    threat_data = phase1_threats.get(keyword)
+    if not threat_data:
+        emit('error_msg', {'msg': "威胁数据不存在"})
+        return
 
     # === AI触发：如果AI是PF，触发AI决策 ===
     if rooms[room]['ai_enabled']:
@@ -470,15 +503,19 @@ def handle_pf_decision(data):
     if rooms[room]['ai_enabled']:
         ai_agent = rooms[room]['ai_agent']
         if ai_agent and ai_agent.role == "PM":
-            threat_data = PHASE1_THREATS[keyword]
-            selected_option = next((opt for opt in threat_data['options'] if opt['id'] == selected_option_id), None)
-            pm_data = {
-                'keyword': keyword,
-                'pf_username': username,
-                'pf_decision': selected_option['text'],
-                'sop_data': threat_data['sop_data']
-            }
-            run_async_in_greenlet(ai_agent.on_pm_verify_request(pm_data))
+            # 从房间获取威胁数据
+            phase1_threats = rooms[room].get('phase1_scenario_threats', {})
+            threat_data = phase1_threats.get(keyword)
+            if threat_data:
+                selected_option = next((opt for opt in threat_data['options'] if opt['id'] == selected_option_id), None)
+                if selected_option:
+                    pm_data = {
+                        'keyword': keyword,
+                        'pf_username': username,
+                        'pf_decision': selected_option['text'],
+                        'sop_data': threat_data['sop_data']
+                    }
+                    run_async_in_greenlet(ai_agent.on_pm_verify_request(pm_data))
 
 
 @socketio.on('pm_verify_decision')
@@ -506,14 +543,17 @@ def handle_start_quiz(data):
     """开始紧急预案测试"""
     room = data['room']
 
+    # 从房间获取测试题
+    emergency_quiz = rooms[room].get('phase1_scenario_quiz', [])
+
     # 记录测试开始
     log_action(room, "SYSTEM", "SYSTEM", "emergency_quiz_started",
-               details={"quiz_count": len(EMERGENCY_QUIZ)},
+               details={"quiz_count": len(emergency_quiz)},
                phase="phase1")
 
     # 发送测试题给双方
     socketio.emit('show_emergency_quiz', {
-        'questions': EMERGENCY_QUIZ
+        'questions': emergency_quiz
     }, room=room)
 
     # === AI触发：如果AI是PM，触发AI答题 ===
@@ -521,7 +561,7 @@ def handle_start_quiz(data):
         ai_agent = rooms[room]['ai_agent']
         if ai_agent and ai_agent.role == "PM":
             # 传入所有题目，让AI内部顺序处理（避免多个event loop冲突）
-            run_async_in_greenlet(ai_agent.on_quiz_questions(EMERGENCY_QUIZ))
+            run_async_in_greenlet(ai_agent.on_quiz_questions(emergency_quiz))
 
 
 @socketio.on('submit_quiz_answer')

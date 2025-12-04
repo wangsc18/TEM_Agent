@@ -5,7 +5,6 @@
 """
 from typing import Dict, Optional, Any
 from dataclasses import dataclass
-from data.phase1_data import PHASE1_THREATS, EMERGENCY_QUIZ
 from data.qrh_library import QRH_LIBRARY
 from data.phase2_advanced import GAUGE_CONFIGS
 
@@ -127,8 +126,11 @@ class GameLogic:
         if actor.role != 'PF':
             return False
 
+        # 获取房间的威胁库
+        phase1_threats = self.rooms[room].get('phase1_scenario_threats', {})
+
         # 检查关键词是否在威胁库中
-        if keyword not in PHASE1_THREATS:
+        if keyword not in phase1_threats:
             self.log_action(room, actor.username, actor.role, "identify_invalid_threat",
                            details={"keyword": keyword},
                            phase="phase1")
@@ -144,7 +146,7 @@ class GameLogic:
                        phase="phase1")
 
         # 获取威胁数据
-        threat_data = PHASE1_THREATS[keyword]
+        threat_data = phase1_threats[keyword]
 
         # 发送决策模态框（只发给PF，如果是人类）
         if not actor.is_ai and actor.sid:
@@ -173,8 +175,13 @@ class GameLogic:
         if actor.role != 'PF':
             return False
 
+        # 获取房间的威胁库
+        phase1_threats = self.rooms[room].get('phase1_scenario_threats', {})
+
         # 获取威胁数据
-        threat_data = PHASE1_THREATS[keyword]
+        threat_data = phase1_threats.get(keyword)
+        if not threat_data:
+            return False
 
         # 找到选中的选项
         selected_option = next((opt for opt in threat_data['options'] if opt['id'] == option_id), None)
@@ -277,8 +284,13 @@ class GameLogic:
         keyword = pending['keyword']
         pf_is_correct = pending['is_correct']
 
+        # 获取房间的威胁库
+        phase1_threats = self.rooms[room].get('phase1_scenario_threats', {})
+
         # 获取威胁数据
-        threat_data = PHASE1_THREATS[keyword]
+        threat_data = phase1_threats.get(keyword)
+        if not threat_data:
+            return False
         scores = threat_data['scores']
 
         # 计算分数和结果
@@ -362,8 +374,11 @@ class GameLogic:
         if actor.role != 'PM':
             return False
 
+        # 获取房间的测试题库
+        emergency_quiz = self.rooms[room].get('phase1_scenario_quiz', [])
+
         # 找到对应的题目
-        question = next((q for q in EMERGENCY_QUIZ if q['id'] == question_id), None)
+        question = next((q for q in emergency_quiz if q['id'] == question_id), None)
         if not question:
             return False
 

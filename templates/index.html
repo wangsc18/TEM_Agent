@@ -1058,8 +1058,8 @@
     let currentPlayingIndex = 0;       // 当前正在播放的句子索引
     let pendingAudioCount = {};        // 每条消息待接收的音频数量
 
-    // 威胁关键词列表 (从后端 PHASE1_THREATS 同步)
-    const THREAT_KEYWORDS = ["24015G25KT", "Landing_Light_U/S", "Recovering_from_Cold"];
+    // 威胁关键词列表（动态从后端接收）
+    let THREAT_KEYWORDS = [];
 
     // 语音开关切换
     function toggleVoice() {
@@ -1285,6 +1285,12 @@
 
     // 2. 渲染 Phase 1 文字
     socket.on('start_phase_1', (payload) => {
+        // 更新威胁关键词列表（动态从后端接收）
+        if (payload.threat_keywords) {
+            THREAT_KEYWORDS = payload.threat_keywords;
+            console.log('[Phase1] 接收到威胁关键词列表:', THREAT_KEYWORDS);
+        }
+
         setDynamicTranslation(document.getElementById('phase-badge'), 'phase.badge.phase1');
         document.getElementById('phase-badge').className = "badge bg-info";
         const box = document.getElementById('preflight-content');
